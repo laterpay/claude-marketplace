@@ -1,10 +1,14 @@
 # supertab-claude-marketplace
 
-Supertab's private plugin marketplace for Claude Code. It currently contains one plugin:
+Supertab's private plugin marketplace for Claude Code. Marketplace name: `supertab`.
 
-| Plugin | What it does | Docs |
+## Plugins
+
+| Plugin | Install id | What it does |
 |---|---|---|
-| `keeptabs` | Shows what Claude Code is spending, stops it at limits you set, and gives the agent the numbers it needs to stay inside a budget (Supertab proof of concept). | [plugins/keeptabs/README.md](plugins/keeptabs/README.md) |
+| [keeptabs](plugins/keeptabs/README.md) | `keeptabs@supertab` | Shows what Claude Code is spending, stops it at limits you set, and gives the agent the numbers it needs to stay inside a budget. Proof of concept. |
+
+Each plugin's README covers what it needs after install and how to remove it cleanly.
 
 ## Add the marketplace
 
