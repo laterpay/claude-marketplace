@@ -30,7 +30,7 @@ Arguments: $ARGUMENTS
 2. If it reports "Already set up", say so, remind the user that sessions started before
    setup do not send telemetry, and suggest `/keeptabs:status` to check. Stop here.
 3. Show the user the plan: every setting that will change, the "What this means"
-   points, and any WARNING about replacing existing values, in full. Do not shorten
+   points, the auto-update line if there is one, and any WARNING about replacing existing values, in full. Do not shorten
    the consent points.
 4. Ask the user to confirm, and wait for an explicit yes. Anything else means do not
    apply. This is their global Claude Code configuration, so do not treat having typed

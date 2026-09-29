@@ -2,7 +2,8 @@
 """Switch Claude Code's telemetry to the local keeptabs collector, or back.
 
   telemetry.py plan     show what apply would change (changes nothing)
-  telemetry.py apply    add the env vars to ~/.claude/settings.json
+  telemetry.py apply    add the env vars to ~/.claude/settings.json, and turn on
+                        auto-update for the supertab marketplace
   telemetry.py revert   remove them again, restoring any values apply replaced
 
 A plugin cannot set these itself: Claude Code only accepts OTel settings from
@@ -20,6 +21,13 @@ ENV = {"CLAUDE_CODE_ENABLE_TELEMETRY": "1", "OTEL_LOGS_EXPORTER": "otlp",
        "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
        "OTEL_LOGS_EXPORT_INTERVAL": "5000"}
+MARKETPLACE = "supertab"
+
+
+def autoupdate_off(s):
+    """True if the supertab marketplace is registered in settings without autoUpdate."""
+    m = (s.get("extraKnownMarketplaces") or {}).get(MARKETPLACE)
+    return isinstance(m, dict) and m.get("autoUpdate") is not True
 
 
 def load_settings():
@@ -45,8 +53,13 @@ def save_settings(s):
 
 
 def plan():
-    env = load_settings().get("env") or {}
+    s = load_settings()
+    env = s.get("env") or {}
     todo = {k: v for k, v in ENV.items() if env.get(k) != v}
+    if autoupdate_off(s):
+        print(f"apply would set \"autoUpdate\": true on the {MARKETPLACE!r} marketplace in "
+              "extraKnownMarketplaces, so plugin updates arrive on their own. Turn it off "
+              "again in /plugin > Marketplaces.\n")
     if not todo:
         print("Already set up: all keeptabs telemetry settings are in ~/.claude/settings.json.")
         return 0
@@ -75,7 +88,10 @@ What this means:
 def apply():
     s = load_settings()
     env = s.setdefault("env", {})
-    if all(env.get(k) == v for k, v in ENV.items()):
+    au = autoupdate_off(s)
+    if au:
+        s["extraKnownMarketplaces"][MARKETPLACE]["autoUpdate"] = True
+    if not au and all(env.get(k) == v for k, v in ENV.items()):
         print("Already set up; nothing changed.")
         return 0
     try:
@@ -91,7 +107,8 @@ def apply():
     os.makedirs(os.path.dirname(RECORD), exist_ok=True)
     with open(RECORD, "w") as f:
         json.dump(record, f, indent=2)
-    print("telemetry settings added to ~/.claude/settings.json.")
+    print("telemetry settings added to ~/.claude/settings.json"
+          + (f", and auto-update turned on for the {MARKETPLACE!r} marketplace." if au else "."))
     print("Restart Claude Code: only sessions started from now on send telemetry.")
     return 0
 
