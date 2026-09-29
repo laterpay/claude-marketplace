@@ -9,12 +9,26 @@ macOS, Python 3 (standard library only).
 
 ## Install
 
-Add the marketplace first (see the [marketplace README](../../README.md) for access to
-the private repo), then:
+The repo is private: you need access and working git credentials, see the
+[marketplace README](../../README.md).
+
+**In one step** (Claude Code v2.1.275 or later), inside a session. This adds the
+marketplace and installs keeptabs; Claude Code asks you to confirm the source, then
+to pick a scope (choose "Install for you" to have it in every project):
 
 ```
+/plugin install keeptabs --marketplace jmcodingde/supertab-claude-marketplace
+```
+
+**In two steps** (any version):
+
+```
+/plugin marketplace add jmcodingde/supertab-claude-marketplace
 /plugin install keeptabs@supertab
 ```
+
+From a shell instead: `claude plugin marketplace add jmcodingde/supertab-claude-marketplace`,
+then `claude plugin install keeptabs@supertab`. The shell has no one-step form.
 
 **Start a new session** (or run `/reload-plugins`). keeptabs is working from that point:
 
