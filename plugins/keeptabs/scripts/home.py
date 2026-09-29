@@ -1,33 +1,32 @@
 #!/usr/bin/env python3
 """Plugin glue. The keeptabs code runs from the plugin (../keeptabs); its data
-lives in ~/.claude/keeptabs. This script keeps that folder and the collector
-in place.
+lives in the plugin's data folder (${CLAUDE_PLUGIN_DATA}), which Claude Code
+deletes when the plugin is uninstalled. This script keeps that folder and the
+collector in place.
 
   home.py session-start   prepare the folder, start the collector, print a SessionStart message
   home.py ensure          the same, silent (used by the guard on each prompt)
   home.py status          print what the plugin sees
-  home.py stop-collector  stop a running collector (for uninstall)
+  home.py stop-collector  stop a running collector (before uninstalling)
 
-In ~/.claude/keeptabs the plugin writes only:
-  budget.json             once, if missing; the user's file from then on
-  keeptabs.py, health.py  launchers that run the installed plugin version, so
-                          "python3 ~/.claude/keeptabs/keeptabs.py" keeps working
-ledger/, raw/ and state/ are written by the keeptabs code itself.
+The plugin itself writes only budget.json there, once, if it is missing; it is
+the user's file from then on. ledger/, raw/ and state/ are written by the
+keeptabs code.
 """
-import fcntl, hashlib, json, os, signal, subprocess, sys, time, urllib.request
+import fcntl, json, os, signal, subprocess, sys, time, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CODE = os.path.join(ROOT, "keeptabs")
 COLLECTOR = os.path.join(CODE, "collector.py")
-HOME = os.path.expanduser("~/.claude/keeptabs")
-STATE = os.path.join(HOME, "state")
+# Hooks get CLAUDE_PLUGIN_DATA; commands run through the Bash tool do not.
+DATA = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.expanduser("~/.claude/plugins/data/keeptabs-supertab")
+STATE = os.path.join(DATA, "state")
 PIDFILE = os.path.join(STATE, "collector.pid")
 LOCK = os.path.join(STATE, "collector.lock")
 LOG = os.path.join(STATE, "collector.log")
 SETTINGS = os.path.expanduser("~/.claude/settings.json")
 LEGACY_PLIST = os.path.expanduser("~/Library/LaunchAgents/co.supertab.keeptabs.collector.plist")
 PROBE = "http://127.0.0.1:4318/health"
-LAUNCHERS = ("keeptabs.py", "health.py")
 TELEMETRY = {"CLAUDE_CODE_ENABLE_TELEMETRY": "1", "OTEL_LOGS_EXPORTER": "otlp",
              "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
              "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318"}
@@ -60,39 +59,11 @@ def write_if_changed(path, text):
     os.replace(tmp, path)
 
 
-def launcher(name):
-    return (f"# Written by the keeptabs plugin: runs {name} from the installed plugin version.\n"
-            f"import runpy, sys\n"
-            f"sys.path.insert(0, {CODE!r})\n"
-            f"runpy.run_path({os.path.join(CODE, name)!r}, run_name='__main__')\n")
-
-
-def remove_old_copies():
-    """Earlier plugin versions copied the code into the folder. Remove the
-    copies that were never edited, as recorded in their manifest."""
-    manifest_path = os.path.join(HOME, ".plugin-sync.json")
-    manifest = load(manifest_path, None)
-    if manifest is None:
-        return
-    for name, digest in manifest.items():
-        path = os.path.join(HOME, name)
-        try:
-            with open(path, "rb") as f:
-                if hashlib.sha256(f.read()).hexdigest() == digest and name not in LAUNCHERS:
-                    os.remove(path)
-        except OSError:
-            pass
-    os.remove(manifest_path)
-
-
 def prepare():
     os.makedirs(STATE, exist_ok=True)
-    remove_old_copies()
-    budget = os.path.join(HOME, "budget.json")
+    budget = os.path.join(DATA, "budget.json")
     if not os.path.exists(budget):
         write_if_changed(budget, open(os.path.join(CODE, "budget.json")).read())
-    for name in LAUNCHERS:
-        write_if_changed(os.path.join(HOME, name), launcher(name))
 
 
 def probe():
@@ -157,7 +128,7 @@ def ensure_collector():
                     "Telemetry will not be recorded until it is free.")
         with open(LOG, "a") as log:
             p = subprocess.Popen([sys.executable, "-c", LAUNCH, COLLECTOR],
-                                 cwd=HOME, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                                 cwd=DATA, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                  start_new_session=True, close_fds=True)
         for _ in range(30):
             if p.poll() is not None:
@@ -199,7 +170,7 @@ def run(quiet):
     try:
         prepare()
     except OSError as e:
-        return [f"keeptabs: could not set up {HOME}: {e}"]
+        return [f"keeptabs: could not set up {DATA}: {e}"]
     msgs = []
     problem = ensure_collector()
     if problem:
@@ -241,7 +212,7 @@ def main():
             print("collector is not running")
         return 0
     if cmd == "status":
-        print(f"data:      {HOME}")
+        print(f"data:      {DATA}")
         print(f"code:      {CODE}")
         pid = probe()
         print(f"collector: {'running, pid ' + str(pid) if pid else 'not running'}"

@@ -14,7 +14,8 @@ collector are the plugin's job and are not written to settings.json.
 import json, os, shutil, sys, time
 
 SETTINGS = os.path.expanduser("~/.claude/settings.json")
-RECORD = os.path.expanduser("~/.claude/keeptabs/.telemetry-setup.json")
+DATA = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.expanduser("~/.claude/plugins/data/keeptabs-supertab")
+RECORD = os.path.join(DATA, ".telemetry-setup.json")
 ENV = {"CLAUDE_CODE_ENABLE_TELEMETRY": "1", "OTEL_LOGS_EXPORTER": "otlp",
        "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
@@ -63,8 +64,9 @@ What this means:
   - Claude Code will send usage events (model, token counts, cost, duration, session
     id, account email) to the keeptabs collector on 127.0.0.1:4318. Nothing leaves
     this machine.
-  - The collector keeps one ledger line per API call in ~/.claude/keeptabs/ledger/
-    and every event as received, minus prompt text, in ~/.claude/keeptabs/raw/.
+  - The collector keeps one ledger line per API call in ledger/
+    and every event as received, minus prompt text, in raw/, both in the plugin's
+    data folder (~/.claude/plugins/data/keeptabs-supertab/), deleted on uninstall.
     Prompt text is never stored.
   - Only sessions started after the change send telemetry: restart Claude Code.""")
     return 0

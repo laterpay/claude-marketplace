@@ -23,8 +23,7 @@ the private repo), then:
 - figures come from transcripts and are marked **INCOMPLETE**, because transcripts
   miss background calls, web searches and some helper calls.
 
-Set your own limits in `~/.claude/keeptabs/budget.json`. The default carries the POC
-author's limits (warn-only, $25 per session, $40 per day, $2 per request, and a job
+Set your own limits with `/keeptabs:budget`. The defaults are the POC author's limits (warn-only, $25 per session, $40 per day, $2 per request, and a job
 budget check-in at $1). See Budgets in the POC README.
 
 ## Full tracking: `/keeptabs:setup`
@@ -39,11 +38,7 @@ first), pointing them at the local collector on `127.0.0.1:4318`. **Then quit an
 restart Claude Code.** Telemetry settings are read only when Claude Code starts, and a
 plugin cannot set them itself.
 
-Check with `/keeptabs:status`, or directly:
-
-```bash
-python3 ~/.claude/keeptabs/health.py
-```
+Check with `/keeptabs:status`.
 
 `collector: OK` means telemetry is flowing and the INCOMPLETE marker is gone.
 
@@ -55,53 +50,61 @@ if it was started by an older version.
 
 ## Uninstall
 
-1. Undo the telemetry settings, if you ran setup: `/keeptabs:setup undo` (while the
-   plugin is still installed). Alternatively, remove these keys from the `env` block of
-   `~/.claude/settings.json` by hand: `CLAUDE_CODE_ENABLE_TELEMETRY`, `OTEL_LOGS_EXPORTER`,
-   `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`,
-   `OTEL_LOGS_EXPORT_INTERVAL`. Setup kept a backup of the file before it changed
-   anything: `~/.claude/settings.json.keeptabs-<date>.bak`. The undo restores any
-   value setup replaced (for example, a company OTel endpoint).
-2. Stop the collector:
+1. If you ran setup, undo the telemetry settings first, while the plugin is still
+   installed: `/keeptabs:setup undo`. It restores any value setup replaced (for example
+   a company OTel endpoint). By hand instead: remove `CLAUDE_CODE_ENABLE_TELEMETRY`,
+   `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT` and
+   `OTEL_LOGS_EXPORT_INTERVAL` from the `env` block of `~/.claude/settings.json`. Setup
+   left a backup of the file from before its change:
+   `~/.claude/settings.json.keeptabs-<date>.bak`.
+2. Stop the collector. Nothing restarts it, but while it runs it would keep writing into
+   the data folder.
 
    ```bash
-   python3 ~/.claude/plugins/marketplaces/supertab/plugins/keeptabs/scripts/home.py stop-collector
+   pkill -f keeptabs/collector.py
    ```
 
-   (Or `pkill -f keeptabs/collector.py`. It is not registered anywhere, so it stays
-   stopped.)
-3. `claude plugin uninstall keeptabs@supertab`, and optionally
-   `claude plugin marketplace remove supertab`.
+3. Uninstall. This also **deletes keeptabs' data** (ledger, raw events, guard state and
+   your `budget.json`). Add `--keep-data` to keep it.
+
+   ```bash
+   claude plugin uninstall keeptabs@supertab
+   ```
+
 4. Restart Claude Code.
-5. Your data stays in `~/.claude/keeptabs` (ledger, raw events, guard state, your
-   `budget.json`). Delete that folder if you want it gone.
+
+## Where things are
+
+| What | Where |
+|---|---|
+| Code | The plugin folder, `${CLAUDE_PLUGIN_ROOT}` (`~/.claude/plugins/cache/supertab/keeptabs/<version>/`) |
+| Data: `budget.json`, `ledger/`, `raw/`, `state/` | The plugin's data folder, `${CLAUDE_PLUGIN_DATA}` (`~/.claude/plugins/data/keeptabs-supertab/`). Kept across updates, deleted on uninstall |
+| Telemetry settings | The `env` block of `~/.claude/settings.json`, after `/keeptabs:setup` |
+
+Nothing else is written outside Claude Code's plugin folders.
+
+To watch the live view in a separate terminal (it runs until Ctrl-C):
+
+```bash
+python3 ~/.claude/plugins/marketplaces/supertab/plugins/keeptabs/keeptabs/keeptabs.py
+```
 
 ## How the POC is packaged
 
 `keeptabs/` holds the POC (`guard.py`, `collector.py`, `keeptabs.py`, `health.py`,
-`budget.json`, `prices.json`, `README.md`) and runs **in place**, from the plugin folder.
-Its `setup.py` (replaced by the plugin) and `gate/` are left out.
+`budget.json`, `prices.json`, `README.md`) and runs in place, from the plugin folder.
+Its `setup.py` (replaced by the plugin) and `gate/` are left out. The plugin copies
+only `budget.json` into the data folder, once, as your starting limits.
 
-**Code and data are split.** The code is in the plugin; the data stays in
-`~/.claude/keeptabs`, where the guard's messages point:
-- `budget.json`: put there once if missing, then it is yours; updates never touch it.
-- `ledger/`, `raw/`, `state/`: written by the POC code.
-- `keeptabs.py`, `health.py`: two small launchers the plugin keeps pointing at the
-  installed version, so `python3 ~/.claude/keeptabs/keeptabs.py` (live view) and
-  `health.py` work as the POC README describes, and the guard still never blocks them.
-
-The data lives there rather than in `${CLAUDE_PLUGIN_DATA}` because it must survive
-uninstalling the plugin, and because the live view runs outside Claude Code, where that
-variable is not set.
-
-**The patch to the POC.** The POC originally expected its code and data in one folder.
-Four files are changed to split them, about a dozen lines in all, each marked
-`# plugin: data in CFG, shipped files next to this script`:
-- `collector.py`, `health.py`: ledger, raw events and heartbeat go to
-  `~/.claude/keeptabs` instead of the script's folder.
-- `keeptabs.py`: reads the ledger and guard state from `~/.claude/keeptabs`, and
-  `prices.json` from its own folder.
-- `guard.py`: reads `prices.json` and imports `health` from its own folder.
+**The patch to the POC.** The POC expected its code and data together in
+`~/.claude/keeptabs`. A small patch to four files splits them, each change marked
+`# plugin: ...`:
+- All four: data goes to the plugin's data folder (`CLAUDE_PLUGIN_DATA`, or
+  `~/.claude/plugins/data/keeptabs-supertab` when run outside a hook).
+- `guard.py`, `keeptabs.py`: `prices.json` (and, for the guard, `health`) come from the
+  script's own folder.
+- `guard.py`, `health.py`: messages point to `/keeptabs:budget` and `/keeptabs:setup`
+  instead of the old paths and `setup.py`.
 
 To see the whole patch (from the parent project):
 
@@ -114,10 +117,11 @@ diff -ru eric-poc marketplace/plugins/keeptabs/keeptabs -x gate -x setup.py
 | Part | What it does |
 |---|---|
 | `hooks/hooks.json` | `SessionStart` → `session-start.sh`; `UserPromptSubmit` and `PreToolUse` (all tools) → `guard.sh` → `keeptabs/guard.py` |
-| `scripts/home.py` | Prepares `~/.claude/keeptabs`, lazy-starts the collector, reports first-run state |
+| `scripts/home.py` | Prepares the data folder, lazy-starts the collector, reports first-run state |
 | `scripts/telemetry.py` | Plan / apply / revert of the telemetry env vars (behind `/keeptabs:setup`) |
 | `skills/setup` | `/keeptabs:setup`, user-invoked only |
 | `skills/status` | `/keeptabs:status`: spend snapshot and health |
+| `skills/budget` | `/keeptabs:budget`: show or change the limits, user-invoked only |
 
 **Collector without launchd.** At session start (and before each prompt, so a crash
 heals itself), `home.py` checks for a running collector. It asks the collector's
@@ -137,8 +141,6 @@ as down. The plugin starts `collector.py` with that lookup stubbed out (`LAUNCH`
 
 ## Notes for the POC author
 
-- `health.py` says "Run setup.py" when telemetry is off. With the plugin that means
-  `/keeptabs:setup` (the plugin's session-start message and `/keeptabs:status` say so).
 - The `http.server` hostname lookup above: overriding `server_bind` (or setting
   `server_name` without `getfqdn`) in `collector.py` would remove the workaround.
 - `setup.py` is not shipped. If its hooks are still in `~/.claude/settings.json` the

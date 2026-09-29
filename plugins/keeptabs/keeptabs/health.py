@@ -13,7 +13,7 @@ Run directly for a report:  python3 health.py
 import glob, json, os, sys
 from datetime import datetime, timezone
 
-CFG = os.path.expanduser("~/.claude/keeptabs")  # plugin: data in CFG, shipped files next to this script
+CFG = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.expanduser("~/.claude/plugins/data/keeptabs-supertab")  # plugin: data in the plugin's data folder, shipped files next to this script
 HEART = os.path.join(CFG, "state", "collector.json")
 SETTINGS = os.path.expanduser("~/.claude/settings.json")
 PROJECTS = os.path.expanduser("~/.claude/projects")
@@ -85,11 +85,11 @@ def check(now=None, sid=None):
     missing = [k for k, v in NEED.items() if str(env.get(k)) != v]
     if missing:
         return False, ("telemetry is not switched on in ~/.claude/settings.json "
-                       f"(missing {', '.join(missing)}). Run setup.py.")
+                       f"(missing {', '.join(missing)}). Run /keeptabs:setup.")
     try:
         hb = json.load(open(HEART))
     except (OSError, ValueError):
-        return False, "the collector has never run. Run setup.py, or start collector.py."
+        return False, "the collector has never run. Start a new Claude Code session to start it."
     alive = parse(hb.get("alive_at"))
     if not alive or (now - alive).total_seconds() > STALE_HEARTBEAT:
         when = alive.astimezone().strftime("%H:%M") if alive else "unknown"

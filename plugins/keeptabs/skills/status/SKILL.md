@@ -7,11 +7,11 @@ description: Show what this Claude Code session has spent and whether keeptabs t
 
 Run these as two separate Bash calls, each exactly as written. keeptabs never blocks
 these two commands, even during a budget stop, but only when each is run on its own:
-do not chain them with `&&`, pipes or redirects.
+do not chain them with `&&`, pipes or redirects, and do not quote the path.
 
-    python3 ~/.claude/keeptabs/keeptabs.py --once
+    python3 ${CLAUDE_PLUGIN_ROOT}/keeptabs/keeptabs.py --once
 
-    python3 ~/.claude/keeptabs/health.py
+    python3 ${CLAUDE_PLUGIN_ROOT}/keeptabs/health.py
 
 The first prints a snapshot of the active session: cost by rate, requests, budget bars
 and cost per tool. It contains terminal colour codes; leave those out when you relay it.
@@ -24,9 +24,8 @@ If health reports a problem:
   come from transcripts only and miss background calls and web searches.
 - "sessions started before setup" or "this session sends no telemetry": setup is done
   but this session predates it. Restarting Claude Code fixes it.
-- "the collector is not running": starting a new session starts it again. The
-  collector's log is `~/.claude/keeptabs/state/collector.log`.
-- Health's own text may say "Run setup.py". With the plugin, that means `/keeptabs:setup`.
+- "the collector is not running" or "has never run": starting a new session starts it.
+  Its log is `${CLAUDE_PLUGIN_DATA}/state/collector.log`.
 
-Budgets are set in `~/.claude/keeptabs/budget.json`. Do not edit that file, or anything
-else in `~/.claude/keeptabs`, unless the user explicitly asks you to.
+For budgets, point the user to `/keeptabs:budget`. Do not edit anything in
+`${CLAUDE_PLUGIN_DATA}` unless the user explicitly asks you to.

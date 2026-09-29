@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 ROOT = os.path.expanduser("~/.claude/projects")
-CFG  = os.path.expanduser("~/.claude/keeptabs")
-PRICES_PATH = os.path.join(HERE, "prices.json")  # plugin: data in CFG, shipped files next to this script
+CFG  = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.expanduser("~/.claude/plugins/data/keeptabs-supertab")  # plugin: data in the plugin's data folder, shipped files next to this script
+PRICES_PATH = os.path.join(HERE, "prices.json")
 BUDGET_PATH = os.path.join(CFG, "budget.json")
 
 # ---------- pricing ----------

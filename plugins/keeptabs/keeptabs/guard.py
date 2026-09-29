@@ -10,13 +10,13 @@ Plus a job budget, set by starting a prompt with "$2:", "beer:" or "200k:".
 It runs until the next one, or "nobudget:" to clear it.
 
 Wired to PreToolUse (the brake inside a turn) and UserPromptSubmit (the stop
-between turns). Config: ~/.claude/keeptabs/budget.json
+between turns). Config: budget.json in the plugin's data folder (/keeptabs:budget)
 """
 import glob, json, os, re, sys, time
 from datetime import datetime
 
-CFG   = os.path.expanduser("~/.claude/keeptabs")
-HERE  = os.path.dirname(os.path.abspath(__file__))  # plugin: data in CFG, shipped files next to this script
+CFG   = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.expanduser("~/.claude/plugins/data/keeptabs-supertab")  # plugin: data in the plugin's data folder, shipped files next to this script
+HERE  = os.path.dirname(os.path.abspath(__file__))
 STATE = os.path.join(CFG, "state")
 
 def load(path, default):
@@ -522,14 +522,14 @@ def main():
                 return ("deny",
                     f"keeptabs: this request hit its own limit ({detail}, {pct}%). Send a "
                     f"new prompt to start a fresh turn, or raise turn_limit_* in "
-                    f"~/.claude/keeptabs/budget.json.",
+                    f"budget.json (/keeptabs:budget shows where).",
                     f"This single request has spent {detail} and reached its per-request "
                     f"ceiling. Stop now and report what you finished and what is left. The "
                     f"user can continue with a new prompt. Do not raise the limit yourself.")
             scope = "session" if name == "session" else "daily"
             return ("deny",
                 f"keeptabs: {scope} budget exhausted. {detail} ({pct}%). Raise the "
-                f"{scope} limit in ~/.claude/keeptabs/budget.json to continue.",
+                f"{scope} limit in budget.json (/keeptabs:budget) to continue.",
                 f"The {scope} budget is exhausted: {detail}. No further tool calls are "
                 f"permitted. Stop work, tell the user, and do not attempt to raise the "
                 f"limit or edit the budget file yourself.")

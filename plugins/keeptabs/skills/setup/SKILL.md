@@ -16,16 +16,13 @@ The script for every step is:
 
     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/telemetry.py" <plan|apply|revert>
 
-If `${CLAUDE_PLUGIN_ROOT}` shows up literally rather than as a path, the plugin root is
-two folders above this skill's base directory (`<base>/../../scripts/telemetry.py`).
-
 Arguments: $ARGUMENTS
 
 ## If the argument is "undo"
 
 1. Run `telemetry.py revert` and show the user its output.
-2. Tell them to restart Claude Code, and that their ledger in `~/.claude/keeptabs` is
-   kept. Stop here.
+2. Tell them to restart Claude Code. Their ledger stays until the plugin is uninstalled.
+   Stop here.
 
 ## Otherwise
 

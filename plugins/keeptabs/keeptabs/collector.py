@@ -9,7 +9,7 @@ Claude Code sends it when these are set (setup.py adds them to settings.json):
   OTEL_EXPORTER_OTLP_PROTOCOL=http/json
   OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
 
-Files (all under ~/.claude/keeptabs):
+Files (all in the plugin's data folder, ~/.claude/plugins/data/keeptabs-supertab):
   ledger/YYYY-MM-DD.jsonl   one line per API call, the record keeptabs trusts
   raw/YYYY-MM-DD.jsonl      every event as received, for checking field names
   state/collector.json      heartbeat, read by health.py
@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CFG = os.path.expanduser("~/.claude/keeptabs")  # plugin: data in CFG, shipped files next to this script
+CFG = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.expanduser("~/.claude/plugins/data/keeptabs-supertab")  # plugin: data in the plugin's data folder, shipped files next to this script
 LEDGER = os.path.join(CFG, "ledger")
 RAW = os.path.join(CFG, "raw")
 HEART = os.path.join(CFG, "state", "collector.json")
