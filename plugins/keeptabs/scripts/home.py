@@ -1,44 +1,43 @@
 #!/usr/bin/env python3
-"""Plugin glue: keeps ~/.claude/keeptabs in step with the plugin and keeps the
-collector running. The POC code in ../poc is used unchanged; it expects to live
-in ~/.claude/keeptabs next to its data, so its files are copied there.
+"""Plugin glue. The keeptabs code runs from the plugin (../keeptabs); its data
+lives in ~/.claude/keeptabs. This script keeps that folder and the collector
+in place.
 
-  home.py session-start   sync + start the collector, print a SessionStart message
-  home.py ensure          sync + start the collector, silent (used by the guard)
+  home.py session-start   prepare the folder, start the collector, print a SessionStart message
+  home.py ensure          the same, silent (used by the guard on each prompt)
   home.py status          print what the plugin sees
   home.py stop-collector  stop a running collector (for uninstall)
 
-Copy rules (see README "How the POC is packaged"):
-  code and prices.json  copied in; replaced on update unless edited locally
-  budget.json           copied once; it is the user's file from then on
-  data                  ledger/, raw/, state/ are never touched
+In ~/.claude/keeptabs the plugin writes only:
+  budget.json             once, if missing; the user's file from then on
+  keeptabs.py, health.py  launchers that run the installed plugin version, so
+                          "python3 ~/.claude/keeptabs/keeptabs.py" keeps working
+ledger/, raw/ and state/ are written by the keeptabs code itself.
 """
-import fcntl, hashlib, json, os, shutil, signal, subprocess, sys, time, urllib.request
+import fcntl, hashlib, json, os, signal, subprocess, sys, time, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-POC = os.path.join(ROOT, "poc")
+CODE = os.path.join(ROOT, "keeptabs")
+COLLECTOR = os.path.join(CODE, "collector.py")
 HOME = os.path.expanduser("~/.claude/keeptabs")
 STATE = os.path.join(HOME, "state")
-MANIFEST = os.path.join(HOME, ".plugin-sync.json")
 PIDFILE = os.path.join(STATE, "collector.pid")
 LOCK = os.path.join(STATE, "collector.lock")
 LOG = os.path.join(STATE, "collector.log")
 SETTINGS = os.path.expanduser("~/.claude/settings.json")
 LEGACY_PLIST = os.path.expanduser("~/Library/LaunchAgents/co.supertab.keeptabs.collector.plist")
 PROBE = "http://127.0.0.1:4318/health"
-MANAGED = ("guard.py", "collector.py", "keeptabs.py", "health.py", "prices.json", "README.md")
-SEEDED = ("budget.json",)
+LAUNCHERS = ("keeptabs.py", "health.py")
 TELEMETRY = {"CLAUDE_CODE_ENABLE_TELEMETRY": "1", "OTEL_LOGS_EXPORTER": "otlp",
              "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
              "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318"}
 
-
-def sha(path):
-    try:
-        with open(path, "rb") as f:
-            return hashlib.sha256(f.read()).hexdigest()
-    except OSError:
-        return None
+# http.server looks up the machine's full hostname before it serves anything.
+# On macOS that reverse lookup of 127.0.0.1 can trigger the Local Network
+# prompt and hang for 20s or more, and telemetry sent meanwhile can time out.
+# The name is only used for display, so the lookup is stubbed out.
+LAUNCH = ("import runpy, socket, sys; socket.getfqdn = lambda name='': name or 'localhost'; "
+          "sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')")
 
 
 def load(path, default):
@@ -49,51 +48,51 @@ def load(path, default):
         return default
 
 
-def install(src, dest):
-    tmp = dest + ".plugin-tmp"
-    shutil.copy2(src, tmp)
-    os.replace(tmp, dest)
-
-
-def sync():
-    """Returns (changed file names, warnings)."""
-    os.makedirs(STATE, exist_ok=True)
-    manifest = load(MANIFEST, {})
-    changed, warnings = [], []
-    for name in MANAGED:
-        src, dest = os.path.join(POC, name), os.path.join(HOME, name)
-        want, have = sha(src), sha(dest)
-        if want is None or want == have:
-            if want:
-                manifest[name] = want
-            continue
-        # Replace only what the plugin put there itself. A file edited by hand,
-        # or left by an older manual install, is kept and reported.
-        if have is None or manifest.get(name) == have:
-            install(src, dest)
-            manifest[name] = want
-            changed.append(name)
-        else:
-            warnings.append(f"{name} has local changes, so the plugin's version was not applied "
-                            f"(its copy is at {src}).")
-    for name in SEEDED:
-        dest = os.path.join(HOME, name)
-        if not os.path.exists(dest):
-            install(os.path.join(POC, name), dest)
-            changed.append(name)
-    tmp = MANIFEST + ".tmp"
+def write_if_changed(path, text):
+    try:
+        if open(path).read() == text:
+            return
+    except OSError:
+        pass
+    tmp = path + ".plugin-tmp"
     with open(tmp, "w") as f:
-        json.dump(manifest, f, indent=2)
-    os.replace(tmp, MANIFEST)
-    return changed, warnings
+        f.write(text)
+    os.replace(tmp, path)
 
 
-# http.server looks up the machine's full hostname before it serves anything.
-# On macOS that reverse lookup of 127.0.0.1 can take 20s or more, and telemetry
-# sent meanwhile can time out. The name is only used for display, so the
-# collector is started with the lookup stubbed out; collector.py runs unchanged.
-LAUNCH = ("import runpy, socket, sys; socket.getfqdn = lambda name='': name or 'localhost'; "
-          "sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')")
+def launcher(name):
+    return (f"# Written by the keeptabs plugin: runs {name} from the installed plugin version.\n"
+            f"import runpy, sys\n"
+            f"sys.path.insert(0, {CODE!r})\n"
+            f"runpy.run_path({os.path.join(CODE, name)!r}, run_name='__main__')\n")
+
+
+def remove_old_copies():
+    """Earlier plugin versions copied the code into the folder. Remove the
+    copies that were never edited, as recorded in their manifest."""
+    manifest_path = os.path.join(HOME, ".plugin-sync.json")
+    manifest = load(manifest_path, None)
+    if manifest is None:
+        return
+    for name, digest in manifest.items():
+        path = os.path.join(HOME, name)
+        try:
+            with open(path, "rb") as f:
+                if hashlib.sha256(f.read()).hexdigest() == digest and name not in LAUNCHERS:
+                    os.remove(path)
+        except OSError:
+            pass
+    os.remove(manifest_path)
+
+
+def prepare():
+    os.makedirs(STATE, exist_ok=True)
+    remove_old_copies()
+    budget = os.path.join(HOME, "budget.json")
+    if not os.path.exists(budget):
+        write_if_changed(budget, open(os.path.join(CODE, "budget.json")).read())
+    for name in LAUNCHERS:
+        write_if_changed(os.path.join(HOME, name), launcher(name))
 
 
 def probe():
@@ -104,15 +103,17 @@ def probe():
             return int(json.load(r).get("pid"))
     except Exception:
         pass
-    # Started but not answering yet (a collector launched without the stub
-    # can take a while): trust our pidfile if that process is a collector.
+    # Started but not answering yet: trust our pidfile if that process is a collector.
     try:
         pid = int(open(PIDFILE).read().strip())
-        cmd = subprocess.run(["ps", "-p", str(pid), "-o", "command="],
-                             capture_output=True, text=True).stdout
-        return pid if "keeptabs/collector.py" in cmd else None
+        return pid if "keeptabs/collector.py" in command(pid) else None
     except (OSError, ValueError):
         return None
+
+
+def command(pid):
+    return subprocess.run(["ps", "-p", str(pid), "-o", "command="],
+                          capture_output=True, text=True).stdout
 
 
 def port_taken():
@@ -136,15 +137,17 @@ def stop(pid):
         time.sleep(0.1)
 
 
-def ensure_collector(restart=False):
-    """Start the collector if it is not running. Returns a problem or None.
-    One instance per machine: a lock serialises sessions starting together,
-    and the collector itself cannot start twice because it binds port 4318."""
+def ensure_collector():
+    """Start the collector if it is not running, or restart it when it runs
+    code other than this plugin version's (after an update). Returns a problem
+    or None. One instance per machine: a lock serialises sessions starting
+    together, and the collector itself cannot start twice because it binds
+    port 4318."""
     os.makedirs(STATE, exist_ok=True)
     with open(LOCK, "w") as lk:
         fcntl.flock(lk, fcntl.LOCK_EX)
         pid = probe()
-        if pid and restart:
+        if pid and COLLECTOR not in command(pid):
             stop(pid)
             pid = None
         if pid:
@@ -153,7 +156,7 @@ def ensure_collector(restart=False):
             return ("port 4318 is in use by another program, so the collector cannot start. "
                     "Telemetry will not be recorded until it is free.")
         with open(LOG, "a") as log:
-            p = subprocess.Popen([sys.executable, "-c", LAUNCH, os.path.join(HOME, "collector.py")],
+            p = subprocess.Popen([sys.executable, "-c", LAUNCH, COLLECTOR],
                                  cwd=HOME, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                  start_new_session=True, close_fds=True)
         for _ in range(30):
@@ -174,8 +177,11 @@ def legacy_problems():
     if any("keeptabs/guard.py" in str(h.get("command"))
            for groups in hooks.values() for g in groups or [] for h in g.get("hooks") or []):
         out.append("~/.claude/settings.json still has guard hooks from the old setup.py, so the "
-                   "guard runs twice. Remove them with: python3 ~/.claude/keeptabs/setup.py "
-                   "uninstall, then run /keeptabs:setup again.")
+                   "guard runs twice. Remove those hook entries, then run /keeptabs:setup again.")
+    if os.path.exists(LEGACY_PLIST):
+        out.append("the old setup.py's launchd job is still registered and restarts an outdated "
+                   "collector. Remove it: launchctl bootout gui/$(id -u)/co.supertab.keeptabs.collector "
+                   f"and delete {LEGACY_PLIST}.")
     return out
 
 
@@ -190,13 +196,12 @@ def telemetry_state():
 
 
 def run(quiet):
-    msgs = []
     try:
-        changed, warnings = sync()
-        msgs += [f"keeptabs: {w}" for w in warnings]
+        prepare()
     except OSError as e:
         return [f"keeptabs: could not set up {HOME}: {e}"]
-    problem = ensure_collector(restart="collector.py" in changed)
+    msgs = []
+    problem = ensure_collector()
     if problem:
         msgs.append(f"keeptabs: {problem}")
     if quiet:
@@ -234,15 +239,13 @@ def main():
             print(f"stopped collector (pid {pid})")
         else:
             print("collector is not running")
-        if os.path.exists(LEGACY_PLIST):
-            print("note: launchd will restart it: the old setup.py job is still registered "
-                  "(python3 ~/.claude/keeptabs/setup.py uninstall removes it)")
         return 0
     if cmd == "status":
-        print(f"home:      {HOME}")
-        print(f"plugin:    {ROOT}")
+        print(f"data:      {HOME}")
+        print(f"code:      {CODE}")
         pid = probe()
-        print(f"collector: {'running, pid ' + str(pid) if pid else 'not running'}")
+        print(f"collector: {'running, pid ' + str(pid) if pid else 'not running'}"
+              + (f" ({command(pid).strip()[-60:]})" if pid else ""))
         print(f"telemetry: {telemetry_state()}")
         for p in legacy_problems():
             print(f"problem:   {p}")

@@ -16,6 +16,7 @@ import glob, json, os, re, sys, time
 from datetime import datetime
 
 CFG   = os.path.expanduser("~/.claude/keeptabs")
+HERE  = os.path.dirname(os.path.abspath(__file__))  # plugin: data in CFG, shipped files next to this script
 STATE = os.path.join(CFG, "state")
 
 def load(path, default):
@@ -390,7 +391,7 @@ def main():
         if re.fullmatch(r"\s*python3\s+\S*keeptabs/(keeptabs|health)\.py(\s+--?[\w=-]+(\s+[\w-]+)?)*\s*", cmd):
             return 0
 
-    prices = load(os.path.join(CFG, "prices.json"), {})
+    prices = load(os.path.join(HERE, "prices.json"), {})
     os.makedirs(STATE, exist_ok=True)
     spath = os.path.join(STATE, sid + ".json")
     st = load(spath, {})
@@ -426,7 +427,7 @@ def main():
     # Prefer the ledger (telemetry, which includes background calls) whenever it
     # is healthy for this session. max() keeps the transcript figure if the
     # ledger is behind, so switching source can never lower a total.
-    sys.path.insert(0, CFG)
+    sys.path.insert(0, HERE)
     try:
         import health
         led_ok, led_why = health.check(sid=sid)
@@ -751,7 +752,7 @@ def main():
 def rebuild():
     """One-off: bring every state file to the current format, oldest session
     first, so each request is credited to the session it started in."""
-    prices = load(os.path.join(CFG, "prices.json"), {})
+    prices = load(os.path.join(HERE, "prices.json"), {})
     jobs = []
     for name in os.listdir(STATE):
         if not name.endswith(".json") or name.startswith("collector"):

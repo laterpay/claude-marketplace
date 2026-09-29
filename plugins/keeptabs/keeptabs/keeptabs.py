@@ -16,7 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 ROOT = os.path.expanduser("~/.claude/projects")
 CFG  = os.path.expanduser("~/.claude/keeptabs")
-PRICES_PATH = os.path.join(CFG, "prices.json")
+PRICES_PATH = os.path.join(HERE, "prices.json")  # plugin: data in CFG, shipped files next to this script
 BUDGET_PATH = os.path.join(CFG, "budget.json")
 
 # ---------- pricing ----------
@@ -286,7 +286,7 @@ class LedgerStore:
         self.events = []
 
     def scan(self):
-        for p in sorted(glob.glob(os.path.join(HERE, "ledger", "*.jsonl"))):
+        for p in sorted(glob.glob(os.path.join(CFG, "ledger", "*.jsonl"))):
             try:
                 with open(p, "rb") as f:
                     f.seek(self.offsets.get(p, 0))
@@ -481,7 +481,7 @@ def render(store, sid, prices, budget, show_all, led=None):
         lines = [x for x in lines if x]
         # The job budget lives in guard.py's state for this session.
         try:
-            gs = json.load(open(os.path.join(HERE, "state", sid + ".json")))
+            gs = json.load(open(os.path.join(CFG, "state", sid + ".json")))
         except Exception:
             gs = {}
         job = gs.get("job")

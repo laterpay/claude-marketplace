@@ -13,8 +13,8 @@ Run directly for a report:  python3 health.py
 import glob, json, os, sys
 from datetime import datetime, timezone
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-HEART = os.path.join(HERE, "state", "collector.json")
+CFG = os.path.expanduser("~/.claude/keeptabs")  # plugin: data in CFG, shipped files next to this script
+HEART = os.path.join(CFG, "state", "collector.json")
 SETTINGS = os.path.expanduser("~/.claude/settings.json")
 PROJECTS = os.path.expanduser("~/.claude/projects")
 NEED = {"CLAUDE_CODE_ENABLE_TELEMETRY": "1", "OTEL_LOGS_EXPORTER": "otlp",
@@ -60,7 +60,7 @@ def last_reply(sid=None):
 def last_ledger(sid):
     """Timestamp of the newest ledger line for a session, or None."""
     best = None
-    for p in sorted(glob.glob(os.path.join(HERE, "ledger", "*.jsonl")))[-2:]:
+    for p in sorted(glob.glob(os.path.join(CFG, "ledger", "*.jsonl")))[-2:]:
         for line in open(p):
             if sid not in line:
                 continue

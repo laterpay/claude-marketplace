@@ -23,9 +23,10 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LEDGER = os.path.join(HERE, "ledger")
-RAW = os.path.join(HERE, "raw")
-HEART = os.path.join(HERE, "state", "collector.json")
+CFG = os.path.expanduser("~/.claude/keeptabs")  # plugin: data in CFG, shipped files next to this script
+LEDGER = os.path.join(CFG, "ledger")
+RAW = os.path.join(CFG, "raw")
+HEART = os.path.join(CFG, "state", "collector.json")
 PRICES = os.path.join(HERE, "prices.json")
 LISTEN = ("127.0.0.1", 4318)
 
