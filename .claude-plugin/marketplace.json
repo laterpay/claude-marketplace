@@ -1,11 +1,11 @@
 {
-  "name": "keeptabs-marketplace",
+  "name": "supertab",
   "owner": {
     "name": "Jannes",
     "email": "jannes@jmdesign.art"
   },
   "metadata": {
-    "description": "Private marketplace for keeptabs, Supertab's Claude Code spend guard (proof of concept)."
+    "description": "Supertab's private Claude Code plugin marketplace. Currently contains one plugin: keeptabs."
   },
   "plugins": [
     {
