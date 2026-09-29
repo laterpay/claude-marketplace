@@ -1,0 +1,41 @@
+{
+  "_comment": "USD per 1,000,000 tokens. Published rates from platform.claude.com/docs/en/about-claude/pricing, checked 2026-09-23. Cache writes: 5m = 1.25x input, 1h = 2x input. Cache reads: 0.1x input, except Opus 5.5 at 0.05x. claude-opus-5 was not in the search results: it is assumed equal to Opus 5.5 base rates with the standard 0.1x cache read. Not included: web search fees (billed per search) and Claude Code background calls not written to transcripts.",
+  "_verified": true,
+  "models": {
+    "claude-opus-5-5": {
+      "input": 4.0,
+      "output": 20.0,
+      "cache_write_5m": 5.0,
+      "cache_write_1h": 8.0,
+      "cache_read": 0.2
+    },
+    "claude-opus-5": {
+      "input": 4.0,
+      "output": 20.0,
+      "cache_write_5m": 5.0,
+      "cache_write_1h": 8.0,
+      "cache_read": 0.4
+    },
+    "claude-sonnet-5": {
+      "input": 2.0,
+      "output": 10.0,
+      "cache_write_5m": 2.5,
+      "cache_write_1h": 4.0,
+      "cache_read": 0.2
+    },
+    "claude-haiku-4-5-20251001": {
+      "input": 1.0,
+      "output": 5.0,
+      "cache_write_5m": 1.25,
+      "cache_write_1h": 2.0,
+      "cache_read": 0.1
+    }
+  },
+  "default": {
+    "input": 4.0,
+    "output": 20.0,
+    "cache_write_5m": 5.0,
+    "cache_write_1h": 8.0,
+    "cache_read": 0.2
+  }
+}

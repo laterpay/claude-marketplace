@@ -1,0 +1,47 @@
+{
+  "_comment": "session_limit_usd depends on prices.json being right. session_limit_tokens is exact. Set either or both; whichever is closest to its limit governs. null disables that one.",
+  "session_limit_usd": 25,
+  "session_limit_tokens": 90000000,
+  "turn_limit_usd": 2,
+  "turn_limit_tokens": 100000,
+  "daily_limit_usd": 40,
+  "daily_limit_tokens": 40000000,
+  "warn_at_percent": 70,
+  "hard_stop": false,
+  "_context_comment": "Context size of the last call. Every call re-reads it all, so this is what each call costs. Warns once per threshold; resets after a compact.",
+  "context_warn_tokens": [
+    200000,
+    350000
+  ],
+  "_cold_comment": "Blocks the first prompt after the prompt cache has expired, before anything is sent, when re-writing the context would be expensive. Sending again within confirm_seconds goes ahead. fresh_session_tokens estimates what a new session writes to start: the ~45k baseline plus ~30k re-read.",
+  "cold_resume": {
+    "min_context_tokens": 100000,
+    "idle_minutes_1h": 55,
+    "idle_minutes_5m": 4,
+    "confirm_seconds": 120,
+    "fresh_session_tokens": 75000
+  },
+  "_job_comment": "Job budget: start a prompt with \"$2:\", \"beer:\" or \"200k:\". Runs until the next one; \"nobudget:\" clears it. ask: estimate on a session's first prompt when no budget is set, and ask only when the estimate is over ask_over_usd.",
+  "job": {
+    "ask": true,
+    "ask_over_usd": 1.0,
+    "hard_stop": true,
+    "scale": {
+      "water": 0.5,
+      "beer": 6,
+      "pizza": 20,
+      "wine": 50,
+      "champagne": 100
+    },
+    "ask_mid_request": true
+  },
+  "_new_session_comment": "Sends Claude the context size, cost per call and break-even for a new session with every prompt, so it can suggest one when the new prompt does not need this conversation.",
+  "new_session": {
+    "enabled": true,
+    "min_context_tokens": 60000,
+    "fresh_session_tokens": 75000,
+    "min_ratio": 2.0
+  },
+  "helpers_may_delegate": false,
+  "_helpers_comment": "Helper (subagent) tool calls get hard stops but not warnings, cannot start other agents unless helpers_may_delegate, and a budget check-in pauses them until the user answers."
+}

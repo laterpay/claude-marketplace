@@ -1,0 +1,17 @@
+{
+  "name": "keeptabs-marketplace",
+  "owner": {
+    "name": "Jannes",
+    "email": "jannes@jmdesign.art"
+  },
+  "metadata": {
+    "description": "Private marketplace for keeptabs, Supertab's Claude Code spend guard (proof of concept)."
+  },
+  "plugins": [
+    {
+      "name": "keeptabs",
+      "source": "./plugins/keeptabs",
+      "description": "Shows what Claude Code is spending, stops it at limits you set, and gives the agent the numbers it needs to stay inside a budget."
+    }
+  ]
+}
