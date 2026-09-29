@@ -54,7 +54,8 @@ Automatic updates are off by default for custom marketplaces. To turn them on: `
 → Marketplaces → supertab → Enable auto-update. Claude Code then checks
 at startup, and an update applies from the next session. keeptabs' `/keeptabs:setup`
 turns this on for you. The repository is private, so the check needs git credentials
-that work without a prompt (an SSH key in `ssh-agent`, or `gh auth setup-git`).
+that work without a prompt (an SSH key in `ssh-agent`, or `gh auth setup-git`). Updates apply from the next
+session.
 
 ## Remove
 
