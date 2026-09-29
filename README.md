@@ -29,6 +29,9 @@ or from a shell: `claude plugin marketplace add jmcodingde/supertab-claude-marke
 `claude plugin install <plugin>@supertab`. Each plugin's README covers what
 happens after install.
 
+Claude Code v2.1.275 or later can do both in one step, inside a session:
+`/plugin install <plugin> --marketplace jmcodingde/supertab-claude-marketplace`.
+
 ## Updates
 
 Plugins here set no `version`, so every commit to `main` is a new version. To pull one:
