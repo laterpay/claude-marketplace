@@ -7,7 +7,8 @@ collector in place.
   home.py session-start   prepare the folder, start the collector, print a SessionStart message
   home.py ensure          the same, silent (used by the guard on each prompt)
   home.py status          print what the plugin sees
-  home.py stop-collector  stop a running collector (before uninstalling)
+  home.py stop-collector  stop a running collector and keep it stopped for the rest of
+                          the session (before uninstalling); a session start brings it back
 
 The plugin itself writes only budget.json there, once, if it is missing; it is
 the user's file from then on. ledger/, raw/ and state/ are written by the
@@ -27,6 +28,7 @@ HEART = os.path.join(STATE, "collector.json")
 STALE_HEARTBEAT = 60   # seconds; the collector writes every 15
 LOCK = os.path.join(STATE, "collector.lock")
 LOG = os.path.join(STATE, "collector.log")
+STOPPED = os.path.join(STATE, "collector.stopped")   # written by stop-collector; ensure then leaves it down
 SETTINGS = os.path.expanduser("~/.claude/settings.json")
 LEGACY_PLIST = os.path.expanduser("~/Library/LaunchAgents/co.supertab.keeptabs.collector.plist")
 PROBE = "http://127.0.0.1:4318/health"
@@ -204,6 +206,8 @@ def run(quiet):
     except OSError as e:
         return [f"keeptabs: could not set up {DATA}: {e}"]
     msgs = []
+    if quiet and os.path.exists(STOPPED):
+        return msgs      # stop-collector ran: stay down until the next session start
     problem = ensure_collector()
     if problem:
         msgs.append(f"keeptabs: {problem}")
@@ -224,6 +228,10 @@ def main():
             json.load(sys.stdin)
         except Exception:
             pass
+        try:
+            os.remove(STOPPED)
+        except OSError:
+            pass
         msgs = run(quiet=False)
         if msgs:
             print(json.dumps({"systemMessage": "\n".join(msgs)}))
@@ -238,6 +246,12 @@ def main():
             print(f"stopped collector (pid {pid})")
         else:
             print("collector is not running")
+        try:
+            os.makedirs(STATE, exist_ok=True)
+            open(STOPPED, "w").close()
+            print("it stays stopped until the next Claude Code session starts")
+        except OSError:
+            pass
         return 0
     if cmd == "status":
         print(f"data:      {DATA}")

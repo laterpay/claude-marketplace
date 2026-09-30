@@ -71,31 +71,28 @@ back on their next prompt, so close those; the last version standing wins.
 
 ## Uninstall
 
-1. If you ran setup, undo the telemetry settings first, while the plugin is still
-   installed: `/keeptabs:setup undo`. It restores any value setup replaced (for example
-   a company OTel endpoint). By hand instead: remove `CLAUDE_CODE_ENABLE_TELEMETRY`,
-   `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT` and
-   `OTEL_LOGS_EXPORT_INTERVAL` from the `env` block of `~/.claude/settings.json`. Setup
-   left a backup of the file from before its change:
-   `~/.claude/settings.json.keeptabs-<date>.bak`.
-2. Stop the collector. Uninstalling deletes the data folder under it while it keeps
-   running; the collector notices within 15s and exits, but until then telemetry from
-   open sessions re-creates `ledger/` and `raw/`. Stopping it first avoids that:
+```
+/keeptabs:uninstall
+```
 
-   ```bash
-   python3 ~/.claude/plugins/cache/supertab/keeptabs/*/scripts/home.py stop-collector
-   ```
+It asks, then takes keeptabs' telemetry settings out of `~/.claude/settings.json`
+(restoring any value setup replaced, for example a company OTel endpoint) and stops the
+collector. Then run, in a terminal:
 
-   or `pkill -f keeptabs/collector.py`.
+```bash
+claude plugin uninstall keeptabs@supertab
+```
 
-3. Uninstall. This also **deletes keeptabs' data** (ledger, raw events, guard state and
-   your `budget.json`). Add `--keep-data` to keep it.
+This also **deletes keeptabs' data** (ledger, raw events, guard state and your
+`budget.json`). Add `--keep-data` to keep it. Restart Claude Code afterwards.
 
-   ```bash
-   claude plugin uninstall keeptabs@supertab
-   ```
-
-4. Restart Claude Code.
+By hand instead: remove `CLAUDE_CODE_ENABLE_TELEMETRY`, `OTEL_LOGS_EXPORTER`,
+`OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT` and
+`OTEL_LOGS_EXPORT_INTERVAL` from the `env` block of `~/.claude/settings.json` (setup left
+a backup: `~/.claude/settings.json.keeptabs-<date>.bak`), stop the collector with
+`pkill -f keeptabs/collector.py`, and uninstall. Stop the collector first: uninstalling
+deletes its data folder while it runs, and until it notices (15s) telemetry from open
+sessions re-creates `ledger/` and `raw/`.
 
 ## Where things are
 
@@ -144,6 +141,7 @@ diff -ru eric-poc marketplace/plugins/keeptabs/keeptabs -x gate -x setup.py
 | `scripts/home.py` | Prepares the data folder, lazy-starts the collector, reports first-run state |
 | `scripts/telemetry.py` | Plan / apply / revert of the telemetry env vars (behind `/keeptabs:setup`) |
 | `skills/setup` | `/keeptabs:setup`, user-invoked only |
+| `skills/uninstall` | `/keeptabs:uninstall`: undo setup and stop the collector, user-invoked only |
 | `skills/status` | `/keeptabs:status`: spend snapshot and health |
 | `skills/budget` | `/keeptabs:budget`: show or change the limits, user-invoked only |
 

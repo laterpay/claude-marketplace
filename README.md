@@ -78,7 +78,7 @@ claude plugin marketplace remove supertab
 ```
 
 Some plugins change things outside Claude Code's plugin folders; their READMEs say how
-to undo that. Do it before uninstalling.
+to undo that. Do it before uninstalling. For keeptabs, run `/keeptabs:uninstall` first.
 
 ## Adding a plugin
 
