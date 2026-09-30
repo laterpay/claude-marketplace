@@ -190,13 +190,12 @@ def legacy_problems():
 
 
 def telemetry_state():
-    """"off", "restart" (set in settings, not in this process yet) or "on"."""
+    """"off" or "on": whether telemetry is set in settings.json. Whether this
+    session actually sends it cannot be read from the environment (Claude Code
+    does not pass the OTel settings on to hooks or child processes); the guard
+    finds out from the ledger after the session's first reply (health.py)."""
     env = (load(SETTINGS, {}) or {}).get("env") or {}
-    if any(str(env.get(k)) != v for k, v in TELEMETRY.items()):
-        return "off"
-    if any(os.environ.get(k) != v for k, v in TELEMETRY.items()):
-        return "restart"
-    return "on"
+    return "off" if any(str(env.get(k)) != v for k, v in TELEMETRY.items()) else "on"
 
 
 def run(quiet):
@@ -211,14 +210,10 @@ def run(quiet):
     if quiet:
         return msgs
     msgs += [f"keeptabs: {p}" for p in legacy_problems()]
-    t = telemetry_state()
-    if t == "off":
+    if telemetry_state() == "off":
         msgs.append("keeptabs: tracking from transcripts only, so figures are INCOMPLETE (they "
                     "miss background calls and web searches). Run /keeptabs:setup and restart "
                     "Claude Code for full tracking.")
-    elif t == "restart":
-        msgs.append("keeptabs: telemetry is set up but this session started without it. "
-                    "Restart Claude Code for full tracking.")
     return msgs
 
 

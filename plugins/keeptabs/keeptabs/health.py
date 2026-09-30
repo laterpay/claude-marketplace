@@ -119,10 +119,18 @@ def check(now=None, sid=None):
                        or f"the collector is not running (last heartbeat {when}).")
     if sid:
         seen = last_ledger(sid)
-        if seen is None:
-            return False, ("this session sends no telemetry. Sessions started before setup "
-                           "do not: start a new one.")
         reply = last_reply(sid)
+        if seen is None:
+            # Nothing can have arrived before the session's first reply, and the
+            # exporter batches for a few seconds after it. Only a reply that is
+            # well past that with still no ledger line means the session does
+            # not send telemetry. The hook's environment cannot tell: Claude
+            # Code does not pass the OTel settings on to hooks or child processes.
+            if reply is None or (now - reply).total_seconds() < FLOW_SLACK:
+                return True, None
+            return False, (f"this session sends no telemetry (it replied at "
+                           f"{reply.astimezone().strftime('%H:%M')}, nothing arrived). Sessions "
+                           "started before setup do not: start a new one.")
         if reply and (reply - seen).total_seconds() > FLOW_SLACK:
             return False, (f"this session's telemetry stopped arriving (last at "
                            f"{seen.astimezone().strftime('%H:%M')}).")
