@@ -29,12 +29,14 @@ Arguments: $ARGUMENTS
 1. Run `telemetry.py plan`. It changes nothing.
 2. If it reports "Already set up", say so, remind the user that sessions started before
    setup do not send telemetry, and suggest `/keeptabs:status` to check. Stop here.
-3. Show the user the plan: every setting that will change, the "What this means"
-   points, the auto-update line if there is one, and any WARNING about replacing existing values, in full. Do not shorten
-   the consent points.
+3. Show the user the plan as printed. It is short on purpose: what changes, that it is
+   global and needs a restart, that nothing leaves the machine, and any WARNING about
+   replacing existing values. Do not add the settings or more explanation yourself.
 4. Ask the user to confirm, and wait for an explicit yes. Anything else means do not
    apply. This is their global Claude Code configuration, so do not treat having typed
-   the command as consent.
+   the command as consent. If they ask for details instead (what exactly changes, what is
+   recorded, where it is stored), run `telemetry.py plan details` and show its output in
+   full, then ask again.
 5. On yes, run `telemetry.py apply` and show where the settings backup went.
 6. Finish with the next step in plain words: quit Claude Code (every open session) and
    start it again. If the plan mentioned auto-update, add that it only runs in sessions

@@ -46,7 +46,7 @@ budget check-in at $1). See Budgets in the POC README.
 /keeptabs:setup
 ```
 
-It shows exactly what it will change and asks before changing anything. On yes it adds
+It says in a few lines what it will change and asks before changing anything (ask for details to see every setting and what gets recorded). On yes it adds
 Claude Code's telemetry settings to the `env` block of `~/.claude/settings.json` (backup
 first), pointing them at the local collector on `127.0.0.1:4318`. **Then quit and
 restart Claude Code.** Telemetry settings are read only when Claude Code starts, and a
