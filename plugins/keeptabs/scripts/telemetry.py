@@ -62,7 +62,7 @@ def plan(details=False):
     if not details:
         return summary(s, todo, replaced)
     if autoupdate_off(s):
-        print(f"apply would set \"autoUpdate\": true on the {MARKETPLACE!r} marketplace in "
+        print(f"Setup would set \"autoUpdate\": true on the {MARKETPLACE!r} marketplace in "
               "extraKnownMarketplaces, so plugin updates arrive on their own in sessions "
               "started from the terminal CLI. The Claude Desktop app disables Claude Code's "
               "updater, and plugin auto-update with it: there, update by hand with "
@@ -71,14 +71,14 @@ def plan(details=False):
     if not todo:
         print("Already set up: all keeptabs telemetry settings are in ~/.claude/settings.json.")
         return 0
-    print("apply would set these in the \"env\" block of ~/.claude/settings.json:")
+    print("Setup would set these in the \"env\" block of ~/.claude/settings.json:")
     for k, v in todo.items():
         was = f"   (replaces {env[k]!r})" if k in env else ""
         print(f"  {k}={v}{was}")
     if replaced:
         print("\nWARNING: some of these are already set to other values, probably for another "
-              "telemetry setup. apply replaces them for every Claude Code session; revert "
-              "puts them back.")
+              "telemetry setup. Setup replaces them for every Claude Code session; "
+              "/keeptabs:setup undo puts them back.")
     print("""
 What this means:
   - It applies to every Claude Code session on this machine, not just this project.
@@ -99,15 +99,15 @@ def summary(s, todo, replaced):
     if not todo and not autoupdate_off(s):
         print("Already set up: all keeptabs telemetry settings are in ~/.claude/settings.json.")
         return 0
-    print("apply would:")
+    print("Setup would:")
     if todo:
         print(f"  - add {len(todo)} telemetry setting{'s' if len(todo) != 1 else ''} to "
               "~/.claude/settings.json (backup first), so Claude Code reports its usage to "
               "the keeptabs collector on this machine")
     if replaced:
         print(f"  - WARNING: replace the existing value{'s' if len(replaced) != 1 else ''} of "
-              f"{', '.join(replaced)}, probably from another telemetry setup (revert puts "
-              "them back)")
+              f"{', '.join(replaced)}, probably from another telemetry setup (/keeptabs:setup undo "
+              "puts them back)")
     if autoupdate_off(s):
         print(f"  - turn on auto-update for the {MARKETPLACE!r} marketplace, so plugin updates "
               "arrive on their own (terminal CLI sessions only)")
