@@ -37,7 +37,9 @@ Arguments: $ARGUMENTS
    the command as consent.
 5. On yes, run `telemetry.py apply` and show where the settings backup went.
 6. Finish with the next step in plain words: quit Claude Code (every open session) and
-   start it again. Open sessions keep running without telemetry. In the new session,
+   start it again. If the plan mentioned auto-update, add that it only runs in sessions
+   started from the terminal CLI; the Claude Desktop app disables it, and updates are
+   then pulled with `claude plugin marketplace update supertab`. Open sessions keep running without telemetry. In the new session,
    `/keeptabs:status` should report "collector: OK" once Claude has replied at least
    once. To undo later: `/keeptabs:setup undo`.
 

@@ -58,7 +58,10 @@ def plan():
     todo = {k: v for k, v in ENV.items() if env.get(k) != v}
     if autoupdate_off(s):
         print(f"apply would set \"autoUpdate\": true on the {MARKETPLACE!r} marketplace in "
-              "extraKnownMarketplaces, so plugin updates arrive on their own. Turn it off "
+              "extraKnownMarketplaces, so plugin updates arrive on their own in sessions "
+              "started from the terminal CLI. The Claude Desktop app disables Claude Code's "
+              "updater, and plugin auto-update with it: there, update by hand with "
+              f"'claude plugin marketplace update {MARKETPLACE}'. Turn auto-update off "
               "again in /plugin > Marketplaces.\n")
     if not todo:
         print("Already set up: all keeptabs telemetry settings are in ~/.claude/settings.json.")

@@ -56,11 +56,18 @@ Check with `/keeptabs:status`.
 
 `collector: OK` means telemetry is flowing and the INCOMPLETE marker is gone.
 
+Setup also turns on auto-update for the marketplace. That only takes effect in sessions
+started from the terminal CLI: the Claude Desktop app disables Claude Code's updater,
+and plugin auto-update with it. From Desktop, update by hand (next section).
+
 ## Updates
 
-Update as described in the [marketplace README](../../README.md), then start a new
-session. It runs the new version straight away, and the collector restarts itself
-if it was started by an older version.
+Update as described in the [marketplace README](../../README.md) (from the Claude
+Desktop app always by hand: `claude plugin marketplace update supertab`, since Desktop
+disables auto-update), then start a new session. It runs the new version straight
+away. The first prompt in a session running the new version stops a collector started
+by an older version and starts its own. Sessions still running the old version swap it
+back on their next prompt, so close those; the last version standing wins.
 
 ## Uninstall
 
@@ -71,12 +78,15 @@ if it was started by an older version.
    `OTEL_LOGS_EXPORT_INTERVAL` from the `env` block of `~/.claude/settings.json`. Setup
    left a backup of the file from before its change:
    `~/.claude/settings.json.keeptabs-<date>.bak`.
-2. Stop the collector. Nothing restarts it, but while it runs it would keep writing into
-   the data folder.
+2. Stop the collector. Uninstalling deletes the data folder under it while it keeps
+   running; the collector notices within 15s and exits, but until then telemetry from
+   open sessions re-creates `ledger/` and `raw/`. Stopping it first avoids that:
 
    ```bash
-   pkill -f keeptabs/collector.py
+   python3 ~/.claude/plugins/cache/supertab/keeptabs/*/scripts/home.py stop-collector
    ```
+
+   or `pkill -f keeptabs/collector.py`.
 
 3. Uninstall. This also **deletes keeptabs' data** (ledger, raw events, guard state and
    your `budget.json`). Add `--keep-data` to keep it.
@@ -91,7 +101,7 @@ if it was started by an older version.
 
 | What | Where |
 |---|---|
-| Code | The plugin folder, `${CLAUDE_PLUGIN_ROOT}` (`~/.claude/plugins/cache/supertab/keeptabs/<version>/`) |
+| Code | The plugin folder, `${CLAUDE_PLUGIN_ROOT}` (`~/.claude/plugins/cache/supertab/keeptabs/<version>/`; the version is the git commit sha) |
 | Data: `budget.json`, `ledger/`, `raw/`, `state/` | The plugin's data folder, `${CLAUDE_PLUGIN_DATA}` (`~/.claude/plugins/data/keeptabs-supertab/`). Kept across updates, deleted on uninstall |
 | Telemetry settings | The `env` block of `~/.claude/settings.json`, after `/keeptabs:setup` |
 
@@ -160,6 +170,15 @@ trigger the Local Network privacy prompt for Python and hang for 20+ seconds unt
 answered. Telemetry sent meanwhile can be lost, and `health.py` reports the collector
 as down. The plugin starts `collector.py` with that lookup stubbed out (`LAUNCH` in
 `home.py`); the name is only used for display.
+
+## Troubleshooting
+
+**`/keeptabs:status` says the collector is stuck.** It answers on port 4318 but writes
+no heartbeat. This is what a collector looks like after its data folder was deleted
+under it (an uninstall and reinstall of the same version, before this was handled):
+on `curl 127.0.0.1:4318/health`, `alive_at` is frozen while `last_event_at` keeps
+moving. Send a prompt in any session: the guard replaces it, and status is OK again.
+Collectors from the current version exit on their own in that state.
 
 ## Notes for the POC author
 

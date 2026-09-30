@@ -1,8 +1,13 @@
 # keeptabs (local prototype)
 
+> This is the standalone POC's README. Installed as the plugin, keeptabs is set up,
+> updated and removed as described in the [plugin README](../README.md): `setup.py` is
+> not shipped, there is no launchd job, and the plugin's `home.py` starts the collector.
+> The parts and file formats below apply to both.
+
 Shows what Claude Code is spending, stops it at limits you set, and gives the agent
 the numbers it needs to stay inside a budget. Standard library Python only, no
-dependencies. macOS (the collector runs under launchd).
+dependencies. macOS (standalone: the collector runs under launchd).
 
 Three parts:
 
