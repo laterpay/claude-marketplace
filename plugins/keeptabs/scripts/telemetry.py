@@ -99,24 +99,30 @@ def summary(s, todo, replaced):
     if not todo and not autoupdate_off(s):
         print("Already set up: all keeptabs telemetry settings are in ~/.claude/settings.json.")
         return 0
-    print("Setup would:")
+    parts = []
     if todo:
-        print(f"  - add {len(todo)} telemetry setting{'s' if len(todo) != 1 else ''} to "
-              "~/.claude/settings.json (backup first), so Claude Code reports its usage to "
-              "the keeptabs collector on this machine")
-    if replaced:
-        print(f"  - WARNING: replace the existing value{'s' if len(replaced) != 1 else ''} of "
-              f"{', '.join(replaced)}, probably from another telemetry setup (/keeptabs:setup undo "
-              "puts them back)")
+        n = len(todo)
+        parts.append(f"Setup would add {n} telemetry setting{'s' if n != 1 else ''} to "
+                     "~/.claude/settings.json (backup first), so Claude Code reports its usage "
+                     "to the keeptabs collector on this machine.")
     if autoupdate_off(s):
-        print(f"  - turn on auto-update for the {MARKETPLACE!r} marketplace, so plugin updates "
-              "arrive on their own (terminal CLI sessions only)")
-    print("""
-It applies to every Claude Code session on this machine and takes a restart. Nothing
-leaves this machine: usage figures go to a local process and are stored in the plugin's
-data folder, deleted on uninstall. Prompt text is never stored. Undo: /keeptabs:setup undo.
+        parts.append(("It would also turn" if todo else "Setup would turn")
+                     + f" on auto-update for the {MARKETPLACE!r} marketplace (terminal CLI "
+                     "sessions only).")
+    print(" ".join(parts))
+    if replaced:
+        n = len(replaced)
+        print(f"\nWARNING: this replaces the existing value{'s' if n != 1 else ''} of "
+              f"{', '.join(replaced)}, probably from another telemetry setup. "
+              f"/keeptabs:setup undo puts {'them' if n != 1 else 'it'} back.")
+    if todo:
+        print("""
+It applies to every Claude Code session on this machine and takes a restart. Everything
+stays on this machine, and prompt text is never stored. Undo: /keeptabs:setup undo.
 
-Ask for details to see each setting and exactly what gets recorded.""")
+Ask for details to see each setting and what gets recorded.""")
+    else:
+        print("\nTurn it off again in /plugin > Marketplaces. Ask for details for more.")
     return 0
 
 
