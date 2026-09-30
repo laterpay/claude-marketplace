@@ -10,7 +10,7 @@ Three checks, each with a plain reason when it fails:
 
 Run directly for a report:  python3 health.py
 """
-import glob, json, os, sys
+import glob, json, os, sys, urllib.request
 from datetime import datetime, timezone
 
 CFG = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.expanduser("~/.claude/plugins/data/keeptabs-supertab")  # plugin: data in the plugin's data folder, shipped files next to this script
@@ -20,6 +20,7 @@ PROJECTS = os.path.expanduser("~/.claude/projects")
 NEED = {"CLAUDE_CODE_ENABLE_TELEMETRY": "1", "OTEL_LOGS_EXPORTER": "otlp",
         "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
         "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318"}
+PROBE = "http://127.0.0.1:4318/health"
 STALE_HEARTBEAT = 60      # seconds
 FLOW_SLACK = 120          # a reply this much newer than the last event is a gap
 
@@ -29,6 +30,26 @@ def parse(ts):
         return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def answering():
+    """Pid of a collector answering on the port, or None. A collector can
+    answer and still write no heartbeat: its data folder was deleted under it
+    (Claude Code does that on uninstall). Its own heartbeat then goes nowhere,
+    and it is the plugin's job (home.py) to replace it at the next prompt."""
+    try:
+        with urllib.request.urlopen(PROBE, timeout=0.5) as r:
+            return int(json.load(r).get("pid"))
+    except Exception:
+        return None
+
+
+def stuck(when):
+    pid = answering()
+    if pid:
+        return (f"the collector is stuck: pid {pid} answers on port 4318 but its heartbeat "
+                f"stopped ({when}). Send a prompt in any session to replace it.")
+    return None
 
 
 def last_reply(sid=None):
@@ -89,11 +110,13 @@ def check(now=None, sid=None):
     try:
         hb = json.load(open(HEART))
     except (OSError, ValueError):
-        return False, "the collector has never run. Start a new Claude Code session to start it."
+        return False, (stuck("no heartbeat file")
+                       or "the collector has never run. Start a new Claude Code session to start it.")
     alive = parse(hb.get("alive_at"))
     if not alive or (now - alive).total_seconds() > STALE_HEARTBEAT:
         when = alive.astimezone().strftime("%H:%M") if alive else "unknown"
-        return False, f"the collector is not running (last heartbeat {when})."
+        return False, (stuck(f"last heartbeat {when}")
+                       or f"the collector is not running (last heartbeat {when}).")
     if sid:
         seen = last_ledger(sid)
         if seen is None:
@@ -105,7 +128,10 @@ def check(now=None, sid=None):
                            f"{seen.astimezone().strftime('%H:%M')}).")
         return True, None
     last_ev = parse(hb.get("last_event_at"))
+    started = parse(hb.get("started_at"))
     reply = last_reply()
+    if started and (now - started).total_seconds() < FLOW_SLACK:
+        return True, None   # just (re)started: a gap before its first event is expected
     if reply and (last_ev is None or (reply - last_ev).total_seconds() > FLOW_SLACK):
         when = last_ev.astimezone().strftime("%H:%M") if last_ev else "never"
         return False, (f"the collector is running but not receiving telemetry (last event "

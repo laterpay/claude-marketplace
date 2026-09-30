@@ -31,7 +31,8 @@ PRICES = os.path.join(HERE, "prices.json")
 LISTEN = ("127.0.0.1", 4318)
 
 lock = threading.Lock()
-stats = {"pid": os.getpid(), "started_at": None, "alive_at": None,
+# "data" lets the plugin tell a collector writing elsewhere from its own.
+stats = {"pid": os.getpid(), "data": CFG, "started_at": None, "alive_at": None,
          "last_event_at": None, "last_api_request_at": None,
          "events": 0, "api_requests": 0, "errors": 0, "last_error": None}
 
@@ -179,14 +180,30 @@ class H(BaseHTTPRequestHandler):
 
 
 def heartbeat():
-    os.makedirs(os.path.dirname(HEART), exist_ok=True)
+    """Write the heartbeat every 15s. The plugin's data folder can disappear
+    under a running collector (Claude Code deletes it on uninstall). If only
+    state/ is missing it is re-created. If the data folder itself was deleted,
+    or deleted and re-created (a reinstall; same path, new inode), the
+    collector exits: it belongs to a plugin that is no longer installed, and
+    the next session starts a fresh one. The inode is compared because the
+    collector's own writes, and this one, would otherwise re-create the folder
+    and hide the deletion."""
+    os.makedirs(CFG, exist_ok=True)
+    home = os.stat(CFG).st_ino
     while True:
-        with lock:
-            stats["alive_at"] = now_iso()
-            tmp = HEART + ".tmp"
-            with open(tmp, "w") as f:
-                json.dump(stats, f)
-            os.replace(tmp, HEART)
+        try:
+            if not os.path.isdir(CFG) or os.stat(CFG).st_ino != home:
+                print(f"collector: data folder {CFG} was deleted, exiting", file=sys.stderr)
+                os._exit(0)
+            os.makedirs(os.path.dirname(HEART), exist_ok=True)
+            with lock:
+                tmp = HEART + ".tmp"
+                stats["alive_at"] = now_iso()
+                with open(tmp, "w") as f:
+                    json.dump(stats, f)
+                os.replace(tmp, HEART)
+        except OSError as e:
+            print(f"collector: heartbeat failed: {e}", file=sys.stderr)
         time.sleep(15)
 
 

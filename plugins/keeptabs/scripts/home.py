@@ -14,6 +14,7 @@ the user's file from then on. ledger/, raw/ and state/ are written by the
 keeptabs code.
 """
 import fcntl, json, os, signal, subprocess, sys, time, urllib.request
+from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CODE = os.path.join(ROOT, "keeptabs")
@@ -22,6 +23,8 @@ COLLECTOR = os.path.join(CODE, "collector.py")
 DATA = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.expanduser("~/.claude/plugins/data/keeptabs-supertab")
 STATE = os.path.join(DATA, "state")
 PIDFILE = os.path.join(STATE, "collector.pid")
+HEART = os.path.join(STATE, "collector.json")
+STALE_HEARTBEAT = 60   # seconds; the collector writes every 15
 LOCK = os.path.join(STATE, "collector.lock")
 LOG = os.path.join(STATE, "collector.log")
 SETTINGS = os.path.expanduser("~/.claude/settings.json")
@@ -67,19 +70,49 @@ def prepare():
 
 
 def probe():
-    """The running collector's pid, or None. Any keeptabs collector counts,
-    including one an older manual install started under launchd."""
+    """(pid, /health payload) of the running collector, or (None, None). Any
+    keeptabs collector counts, including one an older manual install started
+    under launchd. The payload is {} for a collector that has started but is
+    not answering yet (known from our pidfile)."""
     try:
         with urllib.request.urlopen(PROBE, timeout=0.5) as r:
-            return int(json.load(r).get("pid"))
+            h = json.load(r)
+            return int(h.get("pid")), h
     except Exception:
         pass
     # Started but not answering yet: trust our pidfile if that process is a collector.
     try:
         pid = int(open(PIDFILE).read().strip())
-        return pid if "keeptabs/collector.py" in command(pid) else None
+        return (pid, {}) if "keeptabs/collector.py" in command(pid) else (None, None)
     except (OSError, ValueError):
+        return None, None
+
+
+def stuck(pid, health):
+    """Why a collector that answers on the port must be replaced, or None.
+    Answering is not enough: if the data folder was deleted under it (Claude
+    Code does that on uninstall) it keeps serving but writes its heartbeat
+    nowhere, and health.py then reports it as never run. Older collectors
+    exit on their own in that state only from this version on."""
+    if COLLECTOR not in command(pid):
+        return "runs another plugin version"
+    if not health:            # still starting, give it a moment
         return None
+    if health.get("data") != DATA:
+        return f"writes to {health.get('data') or 'an unknown folder'}, not {DATA}"
+    now = datetime.now(timezone.utc)
+    try:
+        alive = datetime.fromisoformat(json.load(open(HEART))["alive_at"])
+    except (OSError, ValueError, KeyError, TypeError):
+        try:   # answering before its first heartbeat write is not stuck yet
+            if (now - datetime.fromisoformat(health["started_at"])).total_seconds() < STALE_HEARTBEAT:
+                return None
+        except (ValueError, KeyError, TypeError):
+            pass
+        return "answers but writes no heartbeat"
+    if (now - alive).total_seconds() > STALE_HEARTBEAT:
+        return f"answers but its heartbeat stopped at {alive.astimezone().strftime('%H:%M')}"
+    return None
 
 
 def command(pid):
@@ -109,16 +142,16 @@ def stop(pid):
 
 
 def ensure_collector():
-    """Start the collector if it is not running, or restart it when it runs
-    code other than this plugin version's (after an update). Returns a problem
-    or None. One instance per machine: a lock serialises sessions starting
-    together, and the collector itself cannot start twice because it binds
-    port 4318."""
+    """Start the collector if it is not running, or replace it when it runs
+    code other than this plugin version's (after an update) or is stuck (see
+    stuck()). Returns a problem or None. One instance per machine: a lock
+    serialises sessions starting together, and the collector itself cannot
+    start twice because it binds port 4318."""
     os.makedirs(STATE, exist_ok=True)
     with open(LOCK, "w") as lk:
         fcntl.flock(lk, fcntl.LOCK_EX)
-        pid = probe()
-        if pid and COLLECTOR not in command(pid):
+        pid, health = probe()
+        if pid and stuck(pid, health):
             stop(pid)
             pid = None
         if pid:
@@ -204,7 +237,7 @@ def main():
         run(quiet=True)
         return 0
     if cmd == "stop-collector":
-        pid = probe()
+        pid, _ = probe()
         if pid:
             stop(pid)
             print(f"stopped collector (pid {pid})")
@@ -214,9 +247,11 @@ def main():
     if cmd == "status":
         print(f"data:      {DATA}")
         print(f"code:      {CODE}")
-        pid = probe()
+        pid, health = probe()
+        why = stuck(pid, health) if pid else None
         print(f"collector: {'running, pid ' + str(pid) if pid else 'not running'}"
-              + (f" ({command(pid).strip()[-60:]})" if pid else ""))
+              + (f" ({command(pid).strip()[-60:]})" if pid else "")
+              + (f"\n           stuck: {why}; the next prompt replaces it" if why else ""))
         print(f"telemetry: {telemetry_state()}")
         for p in legacy_problems():
             print(f"problem:   {p}")

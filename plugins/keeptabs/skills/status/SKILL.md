@@ -26,6 +26,9 @@ If health reports a problem:
   but this session predates it. Restarting Claude Code fixes it.
 - "the collector is not running" or "has never run": starting a new session starts it.
   Its log is `${CLAUDE_PLUGIN_DATA}/state/collector.log`.
+- "the collector is stuck": it answers on the port but stopped writing its heartbeat
+  (its data folder was deleted under it, which happens on uninstall). The guard replaces
+  it before the next prompt, so ask the user to run `/keeptabs:status` once more.
 
 For budgets, point the user to `/keeptabs:budget`. Do not edit anything in
 `${CLAUDE_PLUGIN_DATA}` unless the user explicitly asks you to.

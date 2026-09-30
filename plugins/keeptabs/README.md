@@ -140,11 +140,19 @@ diff -ru eric-poc marketplace/plugins/keeptabs/keeptabs -x gate -x setup.py
 **Collector without launchd.** At session start (and before each prompt, so a crash
 heals itself), `home.py` checks for a running collector. It asks the collector's
 `/health` endpoint, then falls back to `state/collector.pid`. If none is running, or
-the running one comes from another plugin version, it starts one detached from the
-current version, under a file lock so sessions starting together start only one. Port
-4318 itself also guarantees a single instance. The collector keeps running after
-Claude Code exits; after a reboot, the first session starts it again. It is not an MCP
-server, because that would mean one per session and a port clash.
+the running one comes from another plugin version, writes to another data folder, or
+answers but has not written its heartbeat for a minute, it stops that one and starts a
+new one detached from the current version, under a file lock so sessions starting
+together start only one. Port 4318 itself also guarantees a single instance. The
+collector keeps running after Claude Code exits; after a reboot, the first session
+starts it again. It is not an MCP server, because that would mean one per session and
+a port clash.
+
+The heartbeat check matters on reinstall: Claude Code deletes the plugin's data folder
+on uninstall while the collector keeps running. The collector re-creates `state/` if
+only that is missing, and exits within 15s once the data folder itself was deleted
+(or deleted and re-created by a reinstall). Until it does, it still answers on the
+port, which is why answering alone does not count as healthy.
 
 **One workaround, outside the POC code.** Python's `http.server` looks up the machine's
 full hostname before serving anything. On macOS that reverse lookup of `127.0.0.1` can
