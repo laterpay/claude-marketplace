@@ -730,10 +730,15 @@ def main():
 
     # Say so when the collector is not receiving telemetry, otherwise the
     # numbers look complete when they are not. Once per problem, then every 30 min.
+    # Not on a /keeptabs: command: status reports health itself, and setup is
+    # the remedy, so telling the user to run it there is only in the way.
     if event == "UserPromptSubmit":
         ok, why = led_ok, led_why
+        own_cmd = re.match(r"\s*/keeptabs:", str(payload.get("prompt") or ""))
         if ok:
             st.pop("health_warned", None)
+        elif own_cmd:
+            pass
         elif why != st.get("health_warned") or time.time() - float(st.get("health_warned_at", 0)) > 1800:
             st["health_warned"], st["health_warned_at"] = why, time.time()
             msg = (f"keeptabs: usage tracking is INCOMPLETE: {why} Until fixed, figures "

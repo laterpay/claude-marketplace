@@ -130,7 +130,7 @@ def check(now=None, sid=None):
                 return True, None
             return False, (f"this session sends no telemetry (it replied at "
                            f"{reply.astimezone().strftime('%H:%M')}, nothing arrived). Sessions "
-                           "started before setup do not: start a new one.")
+                           "started before setup do not: restart Claude Code.")
         if reply and (reply - seen).total_seconds() > FLOW_SLACK:
             return False, (f"this session's telemetry stopped arriving (last at "
                            f"{seen.astimezone().strftime('%H:%M')}).")
