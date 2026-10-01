@@ -1,4 +1,4 @@
-# supertab-claude-marketplace
+# claude-marketplace
 
 Supertab's private plugin marketplace for Claude Code. Marketplace name: `supertab`.
 
@@ -25,16 +25,16 @@ No tokens are stored in this repo.
 In Claude Code:
 
 ```
-/plugin marketplace add jmcodingde/supertab-claude-marketplace
+/plugin marketplace add laterpay/claude-marketplace
 /plugin install <plugin>@supertab
 ```
 
-or from a shell: `claude plugin marketplace add jmcodingde/supertab-claude-marketplace`, then
+or from a shell: `claude plugin marketplace add laterpay/claude-marketplace`, then
 `claude plugin install <plugin>@supertab`. Each plugin's README covers what
 happens after install.
 
 Claude Code v2.1.275 or later can do both in one step, inside a session:
-`/plugin install <plugin> --marketplace jmcodingde/supertab-claude-marketplace`.
+`/plugin install <plugin> --marketplace laterpay/claude-marketplace`.
 
 ## Updates
 

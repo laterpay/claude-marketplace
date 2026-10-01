@@ -1,8 +1,7 @@
 {
   "name": "supertab",
   "owner": {
-    "name": "Jannes",
-    "email": "jannes@jmdesign.art"
+    "name": "Supertab"
   },
   "metadata": {
     "description": "Supertab's private Claude Code plugin marketplace. Currently contains one plugin: keeptabs."
