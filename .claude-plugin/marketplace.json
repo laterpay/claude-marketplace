@@ -15,7 +15,7 @@
     {
       "name": "tokentab",
       "source": "./plugins/tokentab",
-      "description": "keeptabs rewritten around a Claude Code hooks module (2.1.287 or later): every API call in a ledger from the first prompt, no telemetry setup. Install this or keeptabs, not both."
+      "description": "keeptabs rewritten around a Claude Code hooks module (2.1.304 or later): every API call in a ledger from the first prompt, no telemetry setup. Install this or keeptabs, not both."
     }
   ]
 }

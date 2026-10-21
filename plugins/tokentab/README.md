@@ -7,8 +7,10 @@ a plugin in [claude-marketplace](../../README.md). The POC's own documentation (
 numbers are worked out, budgets, the threat model) is in
 [`tokentab/README.md`](tokentab/README.md).
 
-Needs **Claude Code 2.1.287 or later**: TokenTab's core is a hooks module, which older
-versions do not load (the first prompt then says so, and nothing is tracked). macOS,
+Needs **Claude Code 2.1.304 or later**: TokenTab's core is a hooks module, which
+versions before 2.1.287 do not load (the first prompt then says so, and nothing is
+tracked), and the pane uses text sizes and monospaced figures, which 2.1.292 and older
+refuse to draw. macOS,
 Python 3 (standard library only).
 
 ## Install
@@ -67,15 +69,19 @@ is the live view (`--once` for one snapshot, `--json` for the raw numbers), and
 
 The pane opens beside the chat when a session starts (in a terminal, from 144 columns;
 narrower, the status line carries the numbers and `/tokentab:status` opens it). It
-has two tabs, each a button (hotkeys `l`, `p`): **live**, the Sankey in miniature (Claude
-Desktop and VS Code; the terminal has no drawings) above the terminal view, with "open
-the full flow in the browser" under the drawing; **options**, in sections: the auto-open
-switch first, then the budget limits as fields, saved through the plugin's validator
-(`tokentab/budget.py`), a refused value shown under its field. Auto-open is on unless you
-switch it off there or in `/config` (`tokentab.autoOpen`). "open in browser" (`o`) writes the status
-page and opens it; for 30 minutes after, the page stays live without a reload: it loads
-a data file beside itself every few seconds and swaps only what changed, so hovering the
-Sankey keeps working. The dot in its header says `live`, `stale` or `snapshot`.
+has three tabs, each a button (hotkeys `s`, `b`, `t`): **Spend**, this session's cost as
+one figure with a bar against its limit, the cost by rate (input, cache writes, cache
+reads, output, thinking) as a bar and a table, and every session today and this month;
+**Budget**, in sections: the auto-open switch first, then the budget limits as fields,
+saved through the plugin's validator (`tokentab/budget.py`), a refused value shown under
+its field; **Tools**, per tool its calls and cost and a bar of what it drew (asking, its
+answer into context, re-reading it). Bars are drawings in Claude Desktop, VS Code and
+mobile and block characters in the terminal. Auto-open is on unless you switch it off
+there or in `/config` (`tokentab.autoOpen`). "open in browser" (`o`) writes the status
+page (the flow, the cost chart, requests, call sources) and opens it; for 30 minutes
+after, the page stays live without a reload: it loads a data file beside itself every
+few seconds and swaps only what changed, so hovering the Sankey keeps working. The dot
+in its header says `live`, `stale` or `snapshot`.
 
 ## Updates
 
@@ -99,10 +105,10 @@ data (ledger, guard state and your `budget.json`) stays in
 
 | Part | Where it runs | What it does |
 |---|---|---|
-| `hooks/register.tsx`, the hooks module | Inside Claude Code, loaded from `hooks/hooks.json` (`modules`) | Sees every API request in-process (`telemetry.log`), prices it from `tokentab/prices.json` and appends one line to the session's ledger file. At session start it writes the loaded marker, on first run copies `budget.json` into the data folder and opens the pane; answers `/tokentab:status` by opening it. Draws the pane's tabs: the live view (`tokentab.py --once`), the flow (`sankey.py --flow-svg`), the options (budget.json, written through `budget.py set`, and the `autoOpen` config row); or sets the status line (`tokentab.py --status`). "open in browser" runs `sankey.py --out`, opens the file and, for 30 minutes, has every redraw write the page's data file (`sankey.py --push`) |
+| `hooks/register.tsx`, the hooks module | Inside Claude Code, loaded from `hooks/hooks.json` (`modules`) | Sees every API request in-process (`telemetry.log`), prices it from `tokentab/prices.json` and appends one line to the session's ledger file. At session start it writes the loaded marker, on first run copies `budget.json` into the data folder and opens the pane; answers `/tokentab:status` by opening it. Draws the pane's tabs: Spend and Tools (`tokentab.py --report`), Budget (budget.json, written through `budget.py set`, and the `autoOpen` config row); or sets the status line (`tokentab.py --status`). "open in browser" runs `sankey.py --out`, opens the file and, for 30 minutes, has every redraw write the page's data file (`sankey.py --push`) |
 | `scripts/guard.sh` → `tokentab/guard.py` | Shell hooks on `UserPromptSubmit` and `PreToolUse` | The budget guard: reads the ledger and the session's transcript, warns or stops, gives Claude the budget hints |
 | `scripts/loaded-check.sh` | Shell hook on `UserPromptSubmit` | The version gate: says once, on the first prompt, when the module did not load |
-| `tokentab/tokentab.py`, `tokentab/sankey.py` | Python, run by the hooks module, the spend skill or by hand | The accounting, the terminal live view (`--once`) and the status line (`--status`); the status page (`--out`), its live data file (`--push`) and the pane's Sankey (`--flow-svg`); `budget.py` validates and writes one limit |
+| `tokentab/tokentab.py`, `tokentab/sankey.py` | Python, run by the hooks module, the spend skill or by hand | The accounting, the terminal live view (`--once`), the pane's data (`--report`) and the status line (`--status`); the status page (`--out`), its live data file (`--push`) and the pane's Sankey (`--flow-svg`); `budget.py` validates and writes one limit |
 | `skills/status` | `/tokentab:status`, answered by the hooks module | Opens the pane and hands Claude the figures; the skill's own text runs only where the module did not load |
 | `skills/spend`, `skills/budget` | Claude, when asked what was spent; `/tokentab:budget` | Answer in words from `tokentab.py --once`; show or change the limits |
 | Data: `budget.json`, `ledger/<day>/<session>.jsonl`, `state/`, `status/<session>.html` | `plugins/data/tokentab-supertab/` under `$CLAUDE_CONFIG_DIR`, else under `~/.claude`, one fixed path, separate from keeptabs' folder | Kept across updates; the status page and its data file `status/<session>.js` are rewritten on each "open in browser", the data file on every redraw for 30 minutes after |

@@ -1,6 +1,7 @@
 import { test, expect, mock } from 'claude-code/testing'
 import type { On, RenderElement, RenderNode } from 'claude-code'
-import { at, liveLines, shown, spansOf, stripAnsi, svgOf } from './register'
+import { at, barCells, barSvg, int, liveLines, pct, SERIES, short, shown, stripAnsi, toneOf, usd } from './register'
+import type { Report } from './register'
 
 // The world beneath the plugin: `$.fs` reaches nothing under `claude plugin test`, and
 // nothing answers `telemetry.log`, `session.id`, the pane, the command, the store, the
@@ -11,7 +12,7 @@ type Ui = {
   opens: number; commands: string[]; status: (string | undefined)[]; invalidates: number
   runs: string[][]; toasts: string[]; config: [string, unknown][]; store: Map<string, unknown>
 }
-function world(on: On, initial: Record<string, string>, placed = { is: true }) {
+function world(on: On, initial: Record<string, string>, placed = { is: true }, report: { value: Report } = { value: REPORT }) {
   const fs = new Map(Object.entries(initial))
   const find = (path: string) => [...fs.keys()].find(k => k === path || path.endsWith(k))
   on('fs.read', ($, e) => { const k = find(e.path); return k ? { value: fs.get(k)! } : { deny: `ENOENT: ${e.path}` } })
@@ -35,8 +36,8 @@ function world(on: On, initial: Record<string, string>, placed = { is: true }) {
     ui.runs.push(argv)
     const script = (argv[1] ?? '').split('/').pop()
     let exitCode = 0, stdout = '', stderr = ''
-    if (script === 'tokentab.py') stdout = argv.includes('--status') ? STATUS + '\n' : argv.includes('--once') ? ONCE : ''
-    else if (script === 'sankey.py') stdout = argv.includes('--flow-svg') ? FLOW : argv.includes('--out') ? argv[argv.indexOf('--out') + 1] + '\n' : ''
+    if (script === 'tokentab.py') stdout = argv.includes('--status') ? STATUS + '\n' : argv.includes('--report') ? JSON.stringify(report.value) + '\n' : argv.includes('--once') ? ONCE : ''
+    else if (script === 'sankey.py') stdout = argv.includes('--out') ? argv[argv.indexOf('--out') + 1] + '\n' : ''
     else if (script === 'budget.py') {
       if (argv[argv.length - 1] === 'bad') { exitCode = 1; stderr = `${argv[3]}: a number is needed, not 'bad'\n` }
       else stdout = JSON.stringify(argv[argv.length - 1]) + '\n'
@@ -59,7 +60,25 @@ const ONCE = [
   '',
 ].join('\n')
 const STATUS = 'session $2.0228 · today $7.9406 · job $17.98 left (a pizza ($20.00))'
-const FLOW = '<svg viewBox="0 0 760 380" width="760" height="380" xmlns="http://www.w3.org/2000/svg"><style>text{fill:#d4d4d4}</style><rect/></svg>'
+// What `tokentab.py --report` prints, the figures of Figma's frames: a session over its
+// $2.00 limit (181%), warn only, and three tools.
+const REPORT: Report = {
+  sid: 'a0b1c2d3-session', prices_verified: true, today: 5.94, month: 28.38, overhead: 0.0039,
+  session: { title: 'Token type sidebar', cost: 3.613, tokens: 532533, msgs: 47, limit_usd: 2, limit_tokens: 90000000, frac: 1.8065, warn_at: 70, hard_stop: false },
+  rates: [
+    { label: 'input', key: 'input', tokens: 5134, cost: 0.0205, share: 0.0057 },
+    { label: 'cache write 1h', key: 'cache_write_1h', tokens: 226784, cost: 1.8143, share: 0.5022 },
+    { label: 'cache read', key: 'cache_read', tokens: 5293202, cost: 1.0586, share: 0.293 },
+    { label: 'output text', key: 'output', tokens: 23918, cost: 0.4784, share: 0.1324 },
+    { label: 'thinking', key: 'thinking', tokens: 12061, cost: 0.2412, share: 0.0668 },
+  ],
+  total: { tokens: 5561099, cost: 3.613 }, unmatched: 125,
+  tools: [
+    { name: 'use_figma', calls: 12, cost: 0.5457, ask: 0.3332, ctx: 0.1498, read: 0.0627, ctx_tokens: 18721 },
+    { name: 'Bash', calls: 5, cost: 0.0373, ask: 0.0183, ctx: 0.0148, read: 0.0042, ctx_tokens: 1853 },
+    { name: 'computer', calls: 1, cost: 0.0072, ask: 0.0017, ctx: 0.004, read: 0.0015, ctx_tokens: 503 },
+  ],
+}
 const BUDGET = JSON.stringify({
   _comment: 'kept', session_limit_usd: 25, session_limit_tokens: 90000000, turn_limit_usd: 2, turn_limit_tokens: null,
   daily_limit_usd: 40, daily_limit_tokens: 40000000, warn_at_percent: 70, hard_stop: false,
@@ -184,22 +203,24 @@ test('records that are not api_request, and a failure in the module, leave the r
   expect([...fs.keys()].filter(k => k.includes('/ledger/')).length).toBe(0)
 })
 
-test('the ANSI codes of the live view become spans: bold, dim and the four colours as hex', async () => {
-  expect(spansOf('plain')).toEqual([{ text: 'plain' }])
-  expect(spansOf('\x1b[1mTokenTab\x1b[0m \x1b[2m· live\x1b[0m')).toEqual([
-    { text: 'TokenTab', bold: true }, { text: ' ' }, { text: '· live', dim: true },
+test('the figures as the design writes them, and the bars in Svg and in cells', async () => {
+  expect([usd(3.613), usd(3.613, 4), usd(1234.5), int(5561099)]).toEqual(['$3.61', '$3.6130', '$1,234.50', '5,561,099'])
+  expect([short(90000000), short(100000), short(1500000), short(512)]).toEqual(['90M', '100k', '1.5M', '512'])
+  expect(pct(1.8065)).toBe('181%')
+  expect([toneOf(1.81, 70), toneOf(0.75, 70), toneOf(0.1, 70)]).toEqual(['error', 'warning', 'success'])
+  // a track the full width, the parts on it; past the end a part is cut at the track's end;
+  // light and dark fills by class, no ground of its own
+  const svg = barSvg([{ series: 'ask', frac: 0.5 }, { series: 'ctx', frac: 0.8 }])
+  expect(svg).toContain('<rect class="track" x="0" y="0" width="1000" height="6"/>')
+  expect(svg).toContain('<rect class="ask" x="0.0" y="0" width="497.0" height="6"/>')
+  expect(svg).toContain('<rect class="ctx" x="500.0" y="0" width="500.0" height="6"/>')
+  expect(svg).toContain('@media(prefers-color-scheme:dark)')
+  expect(barCells([{ series: 'ask', frac: 0.5 }, { series: 'ctx', frac: 0.2 }], 10)).toEqual([
+    { text: '█████', series: 'ask' }, { text: '██', series: 'ctx' }, { text: '···' },
   ])
-  // a colour and dim side by side, as the budget bar is drawn; a reset ends both
-  expect(spansOf('\x1b[32m██\x1b[2m··\x1b[0m 8%')).toEqual([
-    { text: '██', color: '#00cd00' }, { text: '··', dim: true, color: '#00cd00' }, { text: ' 8%' },
-  ])
-  expect(spansOf('\x1b[31m\x1b[1mOVER\x1b[0m')).toEqual([{ text: 'OVER', bold: true, color: '#cd0000' }])
-  expect(spansOf('\x1b[33mwarn\x1b[39m \x1b[36mcyan\x1b[22m')).toEqual([{ text: 'warn', color: '#cdcd00' }, { text: ' ' }, { text: 'cyan', color: '#00cdcd' }])
-  // the ctrl-c line and the blank lines after the view are dropped; nothing else is
-  expect(liveLines(ONCE).map(stripAnsi)).toEqual([
-    'TokenTab · live        12:43:54', '', '  data: ledger (every API call)',
-    '    total                  960,195     $2.0228   11 msgs', '    session   ██····     8%   $2.0228 of $25.00',
-  ])
+  expect(barCells([{ series: 'error', frac: 1.8 }], 4)).toEqual([{ text: '████', series: 'error' }])
+  // the ctrl-c line and the blank lines after the view are dropped (the figures for Claude)
+  expect(liveLines(ONCE).map(stripAnsi).slice(-1)).toEqual(['    session   ██····     8%   $2.0228 of $25.00'])
   // the budget fields: dotted keys, "off" for a limit switched off, grouped tokens
   const cfg = JSON.parse(BUDGET)
   expect(at(cfg, 'job.ask_over_usd')).toBe(1)
@@ -209,7 +230,7 @@ test('the ANSI codes of the live view become spans: bold, dim and the four colou
   expect(shown(at(cfg, 'turn_limit_usd'))).toBe('2')
 })
 
-test('an interactive session opens the pane and draws the live view', async ($, on) => {
+test('an interactive session opens the pane and draws the Spend tab', async ($, on) => {
   mock.env(on, { HOME: '/home/t' })
   const clock = mock.clock(on, { now: T0 })
   const { ui } = world(on, FILES)
@@ -217,54 +238,104 @@ test('an interactive session opens the pane and draws the live view', async ($, 
   await clock.settle()                                        // the redraw session.start left running
   expect(ui.opens).toBe(1)
   expect(ui.commands).toEqual([])                             // nothing registered: the skill is the command
-  // placed: the live view was fetched once, with the session pinned, and the status line cleared
-  expect(ui.runs.map(a => a.slice(2))).toEqual([['--once', '--session', SID]])
+  // placed: the report was fetched once, with the session pinned, and the status line cleared
+  expect(ui.runs.map(a => a.slice(2))).toEqual([['--report', '--session', SID]])
   expect(ui.status).toEqual([undefined])
 
-  // the terminal: one Text per line (wrap end), the blank line a space so it keeps its row
   const tree = await $.ui.render({ surface: 'terminal', component: 'Pane', requestId: 'tokentab', props: PANE_PROPS })
-  const drawn = texts(tree)
-  const lines = drawn.filter(t => t.props.wrap === 'end')
-  expect(lines.length).toBe(5)
-  expect(drawn.find(t => t.text === 'TokenTab')?.props).toEqual({ bold: true })
-  expect(drawn.find(t => t.text === '· live')?.props).toEqual({ dimColor: true })
-  expect(drawn.find(t => t.text === '██')?.props).toEqual({ color: '#00cd00' })
-  expect(drawn.filter(t => t.text === ' ').length).toBe(2)     // the space after 'TokenTab', and the blank line
-  expect(drawn.some(t => t.text.includes('ctrl-c'))).toBe(false)
-  // the tab row: live is the primary one, then options and the browser button
-  expect(elements(tree, 'Button').map(b => [b.key, b.variant])).toEqual([
-    ['tab-live', 'primary'], ['tab-options', 'secondary'], ['open-browser', undefined],
+  // the tab row: Spend is the primary one, then Budget, Tools and the browser button
+  expect(elements(tree, 'Button').map(b => [b.key, b.variant, b.hotkey])).toEqual([
+    ['tab-spend', 'primary', 's'], ['tab-budget', 'secondary', 'b'], ['tab-tools', 'secondary', 't'], ['open-browser', undefined, 'o'],
   ])
+  const t = texts(tree)
+  const find = (s: string) => t.find(x => x.text === s)
+  // the hero: the figure at the title size, the badge in the error tone, the line under the bar
+  expect(find('SESSION SPEND')?.props).toEqual({ size: 'footnote', dimColor: true })
+  expect(find('$3.61')?.props).toEqual({ size: 'title', weight: 'bold', tabular: true })
+  expect(find('Over · 181%')?.props).toEqual({ size: 'footnote', weight: 'semibold', color: 'error' })
+  expect(find('of $2.00 · 532,533 of 90M tokens · warn only, warns at 70%')).toBeDefined()
+  // the breakdown: a row per rate with its dot in the series colour, the total, the note
+  expect(t.filter(x => x.text === '● ').map(x => x.props.color)).toEqual(
+    ['input', 'cache_write_1h', 'cache_read', 'output', 'thinking'].map(k => SERIES[k]![0]))
+  for (const s of ['cache write 1h', '226,784', '$1.8143', '50%', '  total', '5,561,099', '$3.6130']) expect(find(s)).toBeDefined()
+  expect(t.some(x => x.text.startsWith('125 output tok have no transcript line'))).toBe(true)
+  // every session, today and this month
+  expect([find('Today'), find('$5.94'), find('This month'), find('$28.38')].every(x => x !== undefined)).toBe(true)
+  // the terminal has no Svg: the bars are block characters, the session's in the error tone
   expect(sources(tree, 'Svg')).toEqual([])
+  expect(t.find(x => x.props.color === SERIES.error![0])?.text).toMatch(/^█+$/)
 
-  // a remote surface: the live view as the last Svg (the flow above it once fetched),
-  // monospace text with the spans as fills and weights
+  // a remote surface: the same tree with the two bars as Svg, the session's and the rates'
   for (const surface of ['desktop', 'vscode', 'mobile'] as const) {
     const remote = await $.ui.render({ surface, component: 'Pane', requestId: 'tokentab', props: PANE_PROPS })
-    const svg = sources(remote, 'Svg').slice(-1)
-    expect(svg[0]).toBe(svgOf(liveLines(ONCE)))
-    expect(svg[0]!.startsWith('<svg xmlns="http://www.w3.org/2000/svg" ')).toBe(true)
-    expect(svg[0]).toContain('<tspan font-weight="700">TokenTab</tspan>')
-    expect(svg[0]).toContain('<tspan class="d">· live</tspan>')
-    expect(svg[0]).toContain('<tspan class="g">██</tspan><tspan class="g" opacity="0.6">····</tspan>')
-    expect(svg[0]).toContain('@media(prefers-color-scheme:light)')   // follows the app's theme; no ground of its own
-    expect(svg[0]).not.toContain('<rect')
-    expect((svg[0]!.match(/<text /g) ?? []).length).toBe(5)       // one <text> per line, the blank one too
-    expect(svg[0]).not.toContain('ctrl-c')
-    expect(texts(remote).some(t => t.props.wrap === 'end')).toBe(false)
+    const svgs = elements(remote, 'Svg')
+    expect(svgs.length).toBe(2)
+    expect(svgs[0]!.source).toBe(barSvg([{ series: 'error', frac: 1.8065 }], 8))
+    expect(svgs[0]!.alt).toBe('181% of the session limit')
+    expect(svgs[1]!.alt).toBe('this session by rate: input 1%, cache write 1h 50%, cache read 29%, output text 13%, thinking 7%')
+    expect(texts(remote).find(x => x.text === '$3.61')?.props.size).toBe('title')
   }
-  // markup in the figures is escaped; a line past 100 columns is cut with an ellipsis
-  expect(svgOf(['a<b&c'])).toContain('<tspan>a&lt;b&amp;c</tspan>')
-  expect(svgOf(['x'.repeat(120)])).toContain('<tspan>' + 'x'.repeat(99) + '…</tspan>')
 
-  // a ledger write redraws: one invalidate, and since a remote surface drew the pane,
-  // two helper runs, the live view and the flow
+  // a ledger write redraws: one report run, one invalidate
   await clock.settle()
   const runs = ui.runs.length, invalidates = ui.invalidates
   await $.telemetry.log(request({}))
   await clock.settle()
-  expect(ui.runs.slice(runs).map(a => a.slice(2))).toEqual([['--once', '--session', SID], ['--session', SID, '--flow-svg']])
+  expect(ui.runs.slice(runs).map(a => a.slice(2))).toEqual([['--report', '--session', SID]])
   expect(ui.invalidates).toBe(invalidates + 1)
+})
+
+test('Spend without a limit has no bar and no badge; before the first call it says so', async ($, on) => {
+  mock.env(on, { HOME: '/home/t' })
+  const clock = mock.clock(on, { now: T0 })
+  const report: { value: Report } = { value: { ...REPORT, session: { ...REPORT.session!, limit_usd: null, limit_tokens: null, frac: null } } }
+  world(on, FILES, { is: true }, report)
+  await $.session.start({ cwd: '/w', surface: 'desktop', isInteractive: true })
+  await clock.settle()
+  const tree = await $.ui.render({ surface: 'desktop', component: 'Pane', requestId: 'tokentab', props: PANE_PROPS })
+  expect(elements(tree, 'Svg').map(s => s.alt)).toEqual([expect.stringMatching(/^this session by rate/)])
+  expect(texts(tree).some(x => x.text.startsWith('Over') || x.text.endsWith('used'))).toBe(false)
+  expect(texts(tree).some(x => x.text === '532,533 tokens · no session limit set')).toBe(true)
+
+  report.value = { ...REPORT, session: null, tools: [] }
+  await $.telemetry.log(request({}))
+  await clock.settle()
+  const none = await $.ui.render({ surface: 'desktop', component: 'Pane', requestId: 'tokentab', props: PANE_PROPS })
+  expect(texts(none).some(x => x.text.startsWith('No API call in this session yet'))).toBe(true)
+  expect(texts(none).some(x => x.text === '$28.38')).toBe(true)
+  await $.ui.press(press('tab-tools', 'desktop'))
+  await clock.settle()
+  const tools = await $.ui.render({ surface: 'desktop', component: 'Pane', requestId: 'tokentab', props: PANE_PROPS })
+  expect(texts(tools).some(x => x.text === 'No tool calls in this session yet.')).toBe(true)
+})
+
+test('the Tools tab: per tool its calls, cost, a bar against the costliest and its three figures', async ($, on) => {
+  mock.env(on, { HOME: '/home/t' })
+  const clock = mock.clock(on, { now: T0 })
+  const { ui } = world(on, FILES)
+  await $.session.start({ cwd: '/w', surface: 'desktop', isInteractive: true })
+  await clock.settle()
+  await $.ui.render({ surface: 'desktop', component: 'Pane', requestId: 'tokentab', props: PANE_PROPS })
+  const runs = ui.runs.length
+  await $.ui.press(press('tab-tools', 'desktop'))
+  await clock.settle()
+  expect(ui.runs.slice(runs).map(a => a.slice(2))).toEqual([['--report', '--session', SID]])
+  const tree = await $.ui.render({ surface: 'desktop', component: 'Pane', requestId: 'tokentab', props: PANE_PROPS })
+  expect(elements(tree, 'Button').map(b => [b.key, b.variant]).slice(0, 3)).toEqual([
+    ['tab-spend', 'secondary'], ['tab-budget', 'secondary'], ['tab-tools', 'primary'],
+  ])
+  const t = texts(tree)
+  for (const s of ['TOOLS', '  3 tools · 18 calls', 'use_figma', '12 calls', '$0.5457', 'computer', '1 call',
+    'ask $0.3332 · ctx $0.1498 (18,721 tok) · re-read $0.0627', 'TokenTab overhead $0.0039: its hook text in context']) {
+    expect(t.some(x => x.text === s)).toBe(true)
+  }
+  // one bar per tool, the costliest filling its track
+  const svgs = elements(tree, 'Svg')
+  expect(svgs.length).toBe(3)
+  const r = REPORT.tools[0]!
+  expect(svgs[0]!.source).toBe(barSvg([{ series: 'ask', frac: r.ask / r.cost }, { series: 'ctx', frac: r.ctx / r.cost }, { series: 'read', frac: r.read / r.cost }], 4))
+  // the legend
+  expect(t.filter(x => x.text === '● ').map(x => x.props.color)).toEqual(['ask', 'ctx', 'read'].map(k => SERIES[k]![0]))
 })
 
 test('while the pane is not placed, the status line carries the numbers', async ($, on) => {
@@ -313,31 +384,6 @@ test('/tokentab:status (the skill) is answered by the hook: the pane opens, the 
   expect(r.context).toEqual([`TokenTab, this session's figures as of now:\n${liveLines(ONCE).map(stripAnsi).join('\n')}`])
 })
 
-test('on a remote surface the live tab draws the flow above the live view, and the flow opens the page', async ($, on) => {
-  mock.env(on, { HOME: '/home/t' })
-  const clock = mock.clock(on, { now: T0 })
-  const { ui } = world(on, FILES)
-  await $.session.start({ cwd: '/w', surface: 'desktop', isInteractive: true })
-  await clock.settle()
-  // the live view and the drawing, the session pinned, no page push (none is open)
-  expect(ui.runs.map(a => [a[1]!.split('/').pop(), ...a.slice(2)])).toEqual([
-    ['tokentab.py', '--once', '--session', SID], ['sankey.py', '--session', SID, '--flow-svg'],
-  ])
-  const desktop = await $.ui.render({ surface: 'desktop', component: 'Pane', requestId: 'tokentab', props: PANE_PROPS })
-  expect(sources(desktop, 'Svg')).toEqual([FLOW, svgOf(liveLines(ONCE))])
-  expect(elements(desktop, 'Button').map(b => [b.key, b.variant])).toEqual([
-    ['tab-live', 'primary'], ['tab-options', 'secondary'], ['open-browser', undefined], ['open-flow', undefined],
-  ])
-  // the terminal has no Svg: the lines alone
-  const terminal = await $.ui.render({ surface: 'terminal', component: 'Pane', requestId: 'tokentab', props: PANE_PROPS })
-  expect(sources(terminal, 'Svg')).toEqual([])
-  expect(texts(terminal).filter(t => t.props.wrap === 'end').length).toBe(5)
-  // the button under the drawing opens the status page
-  const runs = ui.runs.length
-  await $.ui.press(press('open-flow', 'desktop'))
-  expect(ui.runs.slice(runs).map(a => a[0] === 'open' ? 'open' : a[1]!.split('/').pop())).toEqual(['sankey.py', 'open'])
-})
-
 test('the open-in-browser button writes the page for this session, opens it, and keeps it live', async ($, on) => {
   mock.env(on, { HOME: '/home/t' })
   const clock = mock.clock(on, { now: T0 })
@@ -361,29 +407,19 @@ test('the open-in-browser button writes the page for this session, opens it, and
   await $.telemetry.log(request({}))
   await clock.settle()
   expect(ui.runs.slice(before).map(named)).toEqual([
-    ['python3', 'tokentab.py', '--once', '--session', SID],
+    ['python3', 'tokentab.py', '--report', '--session', SID],
     ['python3', 'sankey.py', '--session', SID, '--push', `${DATA}/status/${SID}.js`],
-  ])
-  // with the flow drawn (a remote surface showed the pane), its run writes the data file too
-  await $.ui.render({ surface: 'desktop', component: 'Pane', requestId: 'tokentab', props: PANE_PROPS })
-  await clock.settle()
-  const later = ui.runs.length
-  await $.telemetry.log(request({}))
-  await clock.settle()
-  expect(ui.runs.slice(later).map(named)).toEqual([
-    ['python3', 'tokentab.py', '--once', '--session', SID],
-    ['python3', 'sankey.py', '--session', SID, '--flow-svg', '--push', `${DATA}/status/${SID}.js`],
   ])
 })
 
-test('the options tab: auto-open through the config menu, the limits through the validator', async ($, on) => {
+test('the Budget tab: auto-open through the config menu, the limits through the validator', async ($, on) => {
   mock.env(on, { HOME: '/home/t' })
   const clock = mock.clock(on, { now: T0 })
   const { ui } = world(on, FILES)
   await $.session.start({ cwd: '/w', surface: 'terminal', isInteractive: true })
   await clock.settle()
   await $.ui.render({ surface: 'terminal', component: 'Pane', requestId: 'tokentab', props: PANE_PROPS })
-  await $.ui.press(press('tab-options'))
+  await $.ui.press(press('tab-budget'))
   const tree = await $.ui.render({ surface: 'terminal', component: 'Pane', requestId: 'tokentab', props: PANE_PROPS })
   const t = texts(tree)
   expect(t.some(x => x.text === 'open at session start')).toBe(true)

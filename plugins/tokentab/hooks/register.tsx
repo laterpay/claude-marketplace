@@ -7,16 +7,16 @@ import type { EngineInterface, PluginOptions, Register, RenderChildren, Telemetr
 // switched on, main loop and helpers alike. This module prices it and appends one
 // line to the session's ledger file; the Python accounting reads those.
 //
-// The pane (phase 1, tabs and the flow 2026-10-16). `session.start` opens a pane beside
-// the chat (the `autoOpen` option); `/tokentab:status` (the status skill, answered by
-// a hook) opens it asked. `ui.render` draws one of two tabs: Live, the compact Sankey
-// (`sankey.py --flow-svg`, on the surfaces that draw Svg) above the terminal live view
-// (`tokentab.py --once` with its ANSI codes turned into Text spans, so the pane and the
-// standalone view cannot drift apart); Options, the auto-open switch and the budget
-// limits. While the pane is not placed (a narrow terminal) one status line
-// carries the numbers instead. Redrawn after every ledger write and on a 30 s clock;
-// nothing polls the data folder. Under `claude -p`, or with no surface, nothing visual
-// happens and the ledger is written as before.
+// The pane (phase 1, tabs and the flow 2026-10-16; the Figma redesign 2026-10-21).
+// `session.start` opens a pane beside the chat (the `autoOpen` option); `/tokentab:status`
+// (the status skill, answered by a hook) opens it asked. `ui.render` draws one of three
+// tabs: Spend, the session against its limit, its cost by rate, today and this month;
+// Budget, the auto-open switch and the budget limits; Tools, what each tool cost. Spend
+// and Tools draw `tokentab.py --report`, the same report() the terminal live view and
+// the status line print, so the figures cannot drift apart. While the pane is not placed
+// (a narrow terminal) one status line carries the numbers instead. Redrawn after every
+// ledger write and on a 30 s clock; nothing polls the data folder. Under `claude -p`, or
+// with no surface, nothing visual happens and the ledger is written as before.
 //
 // The status page. "open in browser" writes `status/<session>.html` and opens it; for
 // 30 minutes after, every redraw also writes its data file beside it (`sankey.py --push`),
@@ -154,100 +154,122 @@ const HELPER_TIMEOUT_MS = 20_000
 // after it was last opened from the pane; the page says "stale" once the pushes stop.
 const PAGE_MS = 30 * 60_000
 
-/** The four colours tokentab.py uses, as hex from the xterm palette rather than theme keys
- *  or colour names, so every surface (Desktop's light mode included) draws the terminal look. */
-export const PALETTE: Record<string, string> = { '31': '#cd0000', '32': '#00cd00', '33': '#cdcd00', '36': '#00cdcd' }
-
-export type Span = { text: string; bold?: true; dim?: true; color?: string }
-
 const ANSI = /\x1b\[([0-9;]*)m/g
 export const stripAnsi = (s: string): string => s.replace(ANSI, '')
 
-/** One rendered line as styled spans: SGR 1 → bold, 2 → dim, 31/32/33/36 → the palette
- *  colour, 0 (and a bare `ESC[m`) → everything off, 22 → bold and dim off, 39 → colour
- *  off. Anything else is dropped; tokentab.py writes nothing else. */
-export function spansOf(line: string): Span[] {
-  const out: Span[] = []
-  let bold = false, dim = false, color: string | undefined
-  const push = (text: string) => {
-    if (text === '') return
-    const span: Span = { text }
-    if (bold) span.bold = true
-    if (dim) span.dim = true
-    if (color !== undefined) span.color = color
-    out.push(span)
-  }
-  let last = 0
-  for (const m of line.matchAll(ANSI)) {
-    push(line.slice(last, m.index))
-    last = m.index + m[0].length
-    for (const code of (m[1] || '0').split(';')) {
-      if (code === '0' || code === '') { bold = dim = false; color = undefined }
-      else if (code === '1') bold = true
-      else if (code === '2') dim = true
-      else if (code === '22') bold = dim = false
-      else if (code === '39') color = undefined
-      else if (PALETTE[code] !== undefined) color = PALETTE[code]
-    }
-  }
-  push(line.slice(last))
-  return out
-}
-
-/** `tokentab.py --once` as the pane's lines: the `ctrl-c to quit` line goes (there is no
- *  ctrl-c in a pane) and so do blank lines at the end. */
+/** `tokentab.py --once` as plain lines for Claude's context: the `ctrl-c to quit` line
+ *  goes and so do blank lines at the end. */
 export function liveLines(text: string): string[] {
   const lines = text.replace(/\r/g, '').split('\n').filter(l => stripAnsi(l).trim() !== 'ctrl-c to quit')
   while (lines.length > 0 && stripAnsi(lines[lines.length - 1]!).trim() === '') lines.pop()
   return lines
 }
 
-// The live view as an SVG for the remote surfaces (Desktop, VS Code, mobile), which draw
-// `Text` in a proportional font and have no monospace Text, but do draw `Svg`: one
-// <text> per line in a monospace face, a <tspan> per span, bold as the weight, dim and
-// the four colours as classes. No ground of its own: the API carries no theme, so a
-// <style> with prefers-color-scheme picks a light or a dark palette, and the surface
-// hands its scheme to the image. The terminal look on every surface, in both themes.
-const CELL_W = 7.3, LINE_H = 16, FONT_PX = 12, PAD = 8, MAX_COLS = 100
-const CLASS: Record<string, string> = { '#cd0000': 'r', '#00cd00': 'g', '#cdcd00': 'y', '#00cdcd': 'c' }
-const STYLE = 'svg{fill:#d4d4d4}.d{fill:#8a8a8a}.r{fill:#ff6b6b}.g{fill:#5fd75f}.y{fill:#e5c07b}.c{fill:#56c8d8}'
-  + '@media(prefers-color-scheme:light){svg{fill:#1f1f1f}.d{fill:#767676}.r{fill:#c62828}.g{fill:#2e7d32}.y{fill:#9a7b00}.c{fill:#0277bd}}'
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+// ---------- the report the tabs draw ----------
 
-export function svgOf(lines: string[]): string {
-  const rows = lines.map(line => {
-    const parts: string[] = []
-    let n = 0
-    for (const s of spansOf(line)) {
-      let text = s.text
-      if (n + text.length > MAX_COLS) text = text.slice(0, Math.max(0, MAX_COLS - n - 1)) + '…'
-      n += text.length
-      if (text === '') continue
-      const cls = s.color !== undefined ? CLASS[s.color] : s.dim ? 'd' : undefined
-      const fade = s.dim && s.color !== undefined ? ' opacity="0.6"' : ''
-      parts.push(`<tspan${cls ? ` class="${cls}"` : ''}${s.bold ? ' font-weight="700"' : ''}${fade}>${esc(text)}</tspan>`)
-      if (n >= MAX_COLS) break
-    }
-    return { parts, n }
-  })
-  const cols = Math.max(40, ...rows.map(r => r.n))
-  const w = Math.ceil(cols * CELL_W + 2 * PAD), h = rows.length * LINE_H + 2 * PAD
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" `
-    + `font-family="ui-monospace, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="${FONT_PX}">`
-    + `<style>${STYLE}</style>`
-    + rows.map((r, i) => `<text x="${PAD}" y="${PAD + (i + 1) * LINE_H - 4}" xml:space="preserve">${r.parts.join('')}</text>`).join('')
-    + '</svg>'
+/** `tokentab.py --report`: Spend and Tools as data, from the same report() as the live
+ *  view and the status line. `session` is null until the session's first ledger line. */
+export type Report = {
+  sid: string
+  prices_verified: boolean
+  today: number
+  month: number
+  overhead: number
+  session: null | {
+    title: string; cost: number; tokens: number; msgs: number
+    limit_usd: number | null; limit_tokens: number | null; frac: number | null
+    warn_at: number; hard_stop: boolean
+  }
+  rates?: { label: string; key: string; tokens: number; cost: number; share: number }[]
+  total?: { tokens: number; cost: number }
+  unmatched?: number
+  tools: { name: string; calls: number; cost: number; ask: number; ctx: number; read: number; ctx_tokens: number }[]
+}
+
+const grouped = (n: number, digits: number) =>
+  n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+/** Dollars as the design writes them: 2 decimals for the hero and the totals, 4 in the tables. */
+export const usd = (x: number, digits = 2): string => `$${grouped(x, digits)}`
+export const int = (n: number): string => grouped(Math.round(n), 0)
+/** A limit in short: 90M, 100k, 1.5M. */
+export function short(n: number): string {
+  if (n >= 1e6) return `${+(n / 1e6).toFixed(1)}M`
+  if (n >= 1e3) return `${+(n / 1e3).toFixed(1)}k`
+  return String(n)
+}
+export const pct = (share: number): string => `${Math.round(share * 100)}%`
+
+/** How close a scope is to its limit: error at 100% and over, warning from `warn_at`. */
+export type Tone = 'success' | 'warning' | 'error'
+export function toneOf(frac: number, warnAt: number): Tone {
+  return frac >= 1 ? 'error' : frac * 100 >= warnAt ? 'warning' : 'success'
+}
+
+// The series colours from the Figma frames, a light and a dark value each: the Svg bars
+// pick one through prefers-color-scheme (the API carries no theme), the dots in the
+// tables take the light one, a mid tone that reads on both grounds.
+export const SERIES: Record<string, [string, string]> = {
+  input: ['#9a99a6', '#a9a8b4'],
+  cache_write_1h: ['#6b6fc5', '#8d90e0'],
+  cache_write_5m: ['#9a9ee0', '#b3b6ee'],
+  cache_read: ['#5ba899', '#6cc2b1'],
+  output: ['#e0973a', '#f0ab55'],
+  thinking: ['#a874c9', '#c08fe0'],
+  fees: ['#c9655b', '#e07e74'],
+  ask: ['#7f80cf', '#9a9be6'],
+  ctx: ['#5ba899', '#6cc2b1'],
+  read: ['#d9a23e', '#ebb757'],
+  success: ['#2e7d32', '#5fd75f'],
+  warning: ['#c18f00', '#e5c07b'],
+  error: ['#c0392b', '#ff6b6b'],
+  track: ['#ecebe6', '#3a3a3a'],
+}
+const BAR_STYLE = Object.entries(SERIES).map(([k, [light]]) => `.${k}{fill:${light}}`).join('')
+  + '@media(prefers-color-scheme:dark){' + Object.entries(SERIES).map(([k, [, dark]]) => `.${k}{fill:${dark}}`).join('') + '}'
+
+/** One bar as an Svg: a track the full width, the parts on it left to right, each a
+ *  fraction of the width (cut at the end of the track), a hairline between them. Drawn at
+ *  the slot's width, `height` pixels high. */
+export function barSvg(parts: { series: string; frac: number }[], height = 6): string {
+  const W = 1000, GAP = 3
+  let x = 0
+  const rects: string[] = []
+  for (const p of parts) {
+    const w = Math.min(Math.max(0, p.frac) * W, W - x)
+    if (w <= 0) continue
+    rects.push(`<rect class="${p.series}" x="${x.toFixed(1)}" y="0" width="${Math.max(1, w - (x + w < W ? GAP : 0)).toFixed(1)}" height="${height}"/>`)
+    x += w
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${height}" viewBox="0 0 ${W} ${height}" preserveAspectRatio="none">`
+    + `<style>${BAR_STYLE}</style><rect class="track" x="0" y="0" width="${W}" height="${height}"/>${rects.join('')}</svg>`
+}
+
+/** The same bar in block characters for the terminal: `cells` wide, each part its share
+ *  of the cells in its colour, the rest of the track dim dots. */
+export function barCells(parts: { series: string; frac: number }[], cells: number): { text: string; series?: string }[] {
+  const out: { text: string; series?: string }[] = []
+  let used = 0
+  for (const p of parts) {
+    const n = Math.min(cells - used, Math.round(Math.max(0, p.frac) * cells))
+    if (n <= 0) continue
+    out.push({ text: '█'.repeat(n), series: p.series })
+    used += n
+  }
+  if (used < cells) out.push({ text: '·'.repeat(cells - used) })
+  return out
 }
 
 // ---------- the tabs ----------
 
-export type View = 'live' | 'options'
+export type View = 'spend' | 'budget' | 'tools'
 export const TABS: { view: View; label: string; hotkey: string }[] = [
-  { view: 'live', label: 'live', hotkey: 'l' },
-  { view: 'options', label: 'options', hotkey: 'p' },
+  { view: 'spend', label: 'Spend', hotkey: 's' },
+  { view: 'budget', label: 'Budget', hotkey: 'b' },
+  { view: 'tools', label: 'Tools', hotkey: 't' },
 ]
+const TOOLS_SHOWN = 12
 
-// The budget limits the Options tab edits, in budget.json's keys (dotted below the
+// The budget limits the Budget tab edits, in budget.json's keys (dotted below the
 // top level), as sections of rows: a limit is an Input, a switch an on/off Button.
 // Every write goes through tokentab/budget.py, the one validator.
 export type Setting = { key: string; label: string; kind: 'limit' | 'switch' }
@@ -294,20 +316,19 @@ export function shown(v: unknown): string {
   return String(v)
 }
 
-type Live = { lines: string[]; status: string; error?: string }
 type Options = { budget?: Json; path: string; errors: Record<string, string>; error?: string }
 
 let opts: PluginOptions = {}           // the manifest's userConfig values, from register()
-let view: View = 'live'
-let live: Live | undefined              // the last helper output; a reload starts empty
-let flow: string | undefined            // the last compact Sankey
-let drawsSvg = false                    // a surface that draws Svg has shown the pane: fetch the flow too
+let view: View = 'spend'
+let report: Report | undefined          // the last `--report`; a reload starts empty
+let error: string | undefined           // the last refresh's failure, drawn above the tab
 let options: Options | undefined        // the last budget.json read
 let pageOpenedAt: number | undefined    // ms; the page's data file is written while within PAGE_MS
 let sessionId: string | undefined
 let tick: Timer | undefined             // set while this load draws anything (the 30 s clock)
 let running: Promise<void> | undefined  // one refresh at a time; a request during one runs after it
 let again = false
+let columns = 60                        // the pane body's width in cells, from the last render
 
 const autoOpen = () => opts.autoOpen !== false
 
@@ -343,34 +364,23 @@ async function readBudget($: EngineInterface): Promise<void> {
   }
 }
 
-/** One redraw: the current tab's content when the pane is placed (and the status line
- *  cleared), else the status line alone. The Live tab is one helper process, two where
- *  the flow is drawn above it; the status page's data file, while that page is open, is
- *  written by the flow's run, or by one more. */
+/** One redraw: the current tab's data when the pane is placed (and the status line
+ *  cleared), else the status line alone. Spend and Tools share one `--report` run; the
+ *  status page's data file, while that page is open, is written by one more. */
 async function refreshNow($: EngineInterface): Promise<void> {
   const id = await sid($)
-  const push = (await pageIsOpen($)) ? ['--push', pushPath(await home($), id)] : []
   try {
     if (await isPlaced($)) {
-      if (view === 'options') {
-        await readBudget($)
-      } else {
-        const lines = liveLines(await python($, 'tokentab.py', ['--once', '--session', id]))
-        live = { lines, status: live?.status ?? '' }
-        if (drawsSvg) {
-          flow = await python($, 'sankey.py', ['--session', id, '--flow-svg', ...push])
-          push.length = 0
-        }
-      }
+      if (view === 'budget') await readBudget($)
+      else report = JSON.parse(await python($, 'tokentab.py', ['--report', '--session', id])) as Report
       $.ui.status(undefined)
     } else {
-      const status = (await python($, 'tokentab.py', ['--status', '--session', id])).trim()
-      live = { lines: live?.lines ?? [], status }
-      $.ui.status(status)
+      $.ui.status((await python($, 'tokentab.py', ['--status', '--session', id])).trim())
     }
-    if (push.length > 0) await python($, 'sankey.py', ['--session', id, ...push])
+    if (await pageIsOpen($)) await python($, 'sankey.py', ['--session', id, '--push', pushPath(await home($), id)])
+    error = undefined
   } catch (err) {
-    live = { lines: live?.lines ?? [], status: live?.status ?? '', error: String(err instanceof Error ? err.message : err) }
+    error = String(err instanceof Error ? err.message : err)
   }
   $.ui.invalidate('ui.render')
 }
@@ -464,11 +474,10 @@ export const register: Register = (on, pluginOptions) => {
     } catch { /* nothing to track yet; the shell gate reports a module that did not load */ }
 
     // A reload runs this again: every step below is idempotent (an open id retitles).
-    live = undefined
-    flow = undefined
+    report = undefined
+    error = undefined
     options = undefined
     sessionId = undefined
-    drawsSvg = e.surface !== null && e.surface !== 'terminal'
     if (e.isInteractive && e.surface !== null) {   // `claude -p` and a bare host: nothing visual
       try { pageOpenedAt = num(await $.store.get(`pageOpenedAt:${await sid($)}`)) || undefined } catch { /* none */ }
       if (autoOpen()) {
@@ -482,24 +491,17 @@ export const register: Register = (on, pluginOptions) => {
     return r
   })
 
-  // The terminal draws each live line as styled Text spans (a blank line as one space, so
-  // it keeps its row). A remote surface draws Text in a proportional font and collapses an
-  // empty one, which broke the renderer's columns (Desktop 2.1.295), and the types offer
-  // no monospace Text; there the view is one Svg, see svgOf, with the compact Sankey
-  // above it. Only a Button takes a press (an Svg is a leaf without `onPress`), so the
-  // drawing's click target is the plain Button under it; the terminal has no Svg and
-  // shows the lines alone, "open in browser" (o) giving it the flow.
+  // Three tabs over one report (Spend, Tools) and budget.json (Budget), the same tree on
+  // every surface: the terminal ignores `size`, `weight` and `mono` and is monospaced
+  // anyway; the bars are an Svg where the surface draws one and block characters in the
+  // terminal. Only a Button takes a press, so the tabs and "open in browser" are Buttons.
   on('ui.render', { component: 'Pane', requestId: PANE }, ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
-    const l = live
-    const remote = e.surface !== 'terminal'
-    // A surface that draws Svg is up: the flow is fetched from now on.
-    if (remote && !drawsSvg) { drawsSvg = true; flow = undefined }
-    // Placed after a status-only refresh (the terminal widened), or a tab shown for the
-    // first time: fetch its content once. Only while nothing is in flight, so a render
-    // never starts a refresh that invalidates into another render.
-    const empty = view === 'options' ? options === undefined
-      : l === undefined || (l.lines.length === 0 && l.error === undefined) || (remote && flow === undefined && l.error === undefined)   // a failed flow run shows its error, not a loop
+    columns = e.props.bodyColumns
+    // A tab shown for the first time, or the pane placed after a status-only refresh:
+    // fetch its data once. Only while nothing is in flight, so a render never starts a
+    // refresh that invalidates into another render.
+    const empty = view === 'budget' ? options === undefined : report === undefined && error === undefined
     if (empty && running === undefined) void refresh($)
     const tabs = (
       <Box gap={1}>
@@ -507,40 +509,16 @@ export const register: Register = (on, pluginOptions) => {
           <Button key={`tab-${t.view}`} label={t.label} hotkey={t.hotkey} variant={view === t.view ? 'primary' : 'secondary'}
             onPress={() => show($, t.view)} />
         ))}
-        <Button key="open-browser" label="open in browser" hotkey="o" onPress={() => { void openSnapshot($) }} />
+        <Button key="open-browser" label="open in browser ↗" hotkey="o" onPress={() => { void openSnapshot($) }} />
       </Box>
     )
-    let body
-    if (view === 'options') {
-      body = optionsTab($, e)
-    } else {
-      const lines = l?.lines ?? []
-      if (!remote) {
-        body = lines.map(line => (
-          <Text wrap="end">
-            {spansOf(line === '' ? ' ' : line).map(s => <Text bold={s.bold} dimColor={s.dim} color={s.color}>{s.text}</Text>)}
-          </Text>
-        ))
-      } else {
-        const { Svg } = $.ui.resolve(e)
-        body = (
-          <Box flexDirection="column" gap={1}>
-            {flow !== undefined && (
-              <Box key="flow" flexDirection="column">
-                <Svg source={flow} alt="where this session's money went: session, model, kind, rate, tool, where it went" />
-                <Button key="open-flow" plain dimColor label="open the full flow in the browser ↗" onPress={() => { void openSnapshot($) }} />
-              </Box>
-            )}
-            {lines.length > 0 && <Svg source={svgOf(lines)} alt={`TokenTab live view: ${lines.map(stripAnsi).join(' / ')}`} />}
-          </Box>
-        )
-      }
-    }
+    const body = view === 'budget' ? budgetTab($, e)
+      : report === undefined ? <Text dimColor>loading...</Text>
+      : view === 'tools' ? toolsTab($, e, report) : spendTab($, e, report)
     return (
-      <Box flexDirection="column">
+      <Box flexDirection="column" gap={1}>
         {tabs}
-        {l === undefined && view === 'live' && <Text dimColor>loading...</Text>}
-        {l?.error !== undefined && <Text color="error">TokenTab: {l.error}</Text>}
+        {error !== undefined && <Text color="error">TokenTab: {error}</Text>}
         {body}
       </Box>
     )
@@ -584,30 +562,202 @@ export const register: Register = (on, pluginOptions) => {
   }).catch(($, e, next) => next(e))
 }
 
-/** The Options tab, in sections: the pane's auto-open switch (the manifest's `userConfig`
- *  field, as in /config) first, then the budget limits over budget.json, a limit as an
- *  Input, a switch as an on/off Button. The labels sit in a column of fixed width, not
- *  padded with spaces: a remote surface draws Text in a proportional font, where padding
- *  left every field at a different place. Mobile has no Input, so it shows the values
- *  and says where to edit them. */
+// ---------- the kit the tabs are drawn with ----------
+
 type RenderEvent = Parameters<EngineInterface['ui']['resolve']>[0]
+type Part = { series: string; frac: number }
 
-const LABEL_WIDTH = '40%'
+/** A bar: an Svg on the surfaces that draw one, block characters in the terminal (as
+ *  wide as the pane's body, within reason). */
+function bar($: EngineInterface, e: RenderEvent, parts: Part[], alt: string, height = 6): RenderChildren {
+  if (e.surface !== 'terminal') {
+    const { Svg } = $.ui.resolve(e)
+    return <Svg source={barSvg(parts, height)} alt={alt} height={height} />
+  }
+  const { Text } = $.ui.resolve(e)
+  return (
+    <Text wrap="truncate">
+      {barCells(parts, Math.max(16, Math.min(72, columns - 2))).map(c =>
+        c.series === undefined ? <Text dimColor>{c.text}</Text> : <Text color={SERIES[c.series]![0]}>{c.text}</Text>)}
+    </Text>
+  )
+}
 
-function optionsTab($: EngineInterface, e: RenderEvent): RenderChildren {
+/** A hairline between sections. */
+function rule($: EngineInterface, e: RenderEvent): RenderChildren {
+  const { Text } = $.ui.resolve(e)
+  return <Text dimColor wrap="truncate">{'─'.repeat(120)}</Text>
+}
+
+/** A section's small capitals label, as the frames set them. */
+function label($: EngineInterface, e: RenderEvent, text: string): RenderChildren {
+  const { Text } = $.ui.resolve(e)
+  return <Text size="footnote" dimColor>{text.toUpperCase()}</Text>
+}
+
+/** A mono heading with a dim note beside it: `SESSION 47 msgs`, `TOOLS 8 tools · 27 calls`. */
+function heading($: EngineInterface, e: RenderEvent, title: string, note: string): RenderChildren {
+  const { Text } = $.ui.resolve(e)
+  return <Text size="footnote" mono><Text mono bold>{title}</Text><Text mono dimColor>{`  ${note}`}</Text></Text>
+}
+
+/** A right-aligned mono cell of a fixed width, for the columns of a table. */
+function cell($: EngineInterface, e: RenderEvent, text: string, width: number, style: { bold?: boolean; dim?: boolean } = {}): RenderChildren {
+  const { Box, Text } = $.ui.resolve(e)
+  return (
+    <Box width={width} flexShrink={0} justifyContent="flex-end">
+      <Text size="footnote" mono tabular bold={style.bold} dimColor={style.dim}>{text}</Text>
+    </Box>
+  )
+}
+
+/** Spend, Figma's "A · Hero number": the session against its limit as one figure and a
+ *  bar, the rate breakdown as a stacked bar and a table, then every session today and
+ *  this month. */
+function spendTab($: EngineInterface, e: RenderEvent, r: Report): RenderChildren {
+  const { Box, Text } = $.ui.resolve(e)
+  const s = r.session
+  const allSessions = (
+    <Box key="all" flexDirection="column" gap="xs">
+      {label($, e, 'all sessions')}
+      <Box>
+        {([['Today', r.today], ['This month', r.month]] as const).map(([name, v]) => (
+          <Box key={`all-${name}`} width="50%" flexDirection="column">
+            <Text size="footnote" dimColor>{name}</Text>
+            <Text size="heading" weight="bold" tabular>{usd(v)}</Text>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  )
+  if (s === null) {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text dimColor>No API call in this session yet; its spend shows from the first one.</Text>
+        {rule($, e)}
+        {allSessions}
+      </Box>
+    )
+  }
+  const tone = s.frac === null ? undefined : toneOf(s.frac, s.warn_at)
+  const badge = s.frac === null || tone === undefined ? undefined
+    : <Text size="footnote" weight="semibold" color={tone}>
+        {tone === 'error' ? `Over · ${pct(s.frac)}` : tone === 'warning' ? `Warning · ${pct(s.frac)}` : `${pct(s.frac)} used`}
+      </Text>
+  const mode = `${s.hard_stop ? 'hard stop' : 'warn only'}, warns at ${s.warn_at}%`
+  const under = [
+    s.limit_usd !== null ? `of ${usd(s.limit_usd)}` : '',
+    s.limit_tokens !== null ? `${int(s.tokens)} of ${short(s.limit_tokens)} tokens` : `${int(s.tokens)} tokens`,
+    s.frac !== null ? mode : 'no session limit set',
+  ].filter(x => x !== '').join(' · ')
+  const rates = r.rates ?? []
+  const series = (key: string) => (SERIES[key] ? key : 'input')
+  const COLS = { tokens: 11, cost: 10, share: 5 }
+  const row = (key: string, name: RenderChildren, tokens: string, cost: string, share: string, style: { bold?: boolean; dim?: boolean } = {}) => (
+    <Box key={`rate-${key}`} alignItems="center">
+      <Box flexGrow={1} flexShrink={1}>{name}</Box>
+      {cell($, e, tokens, COLS.tokens, style)}
+      {cell($, e, cost, COLS.cost, style)}
+      {cell($, e, share, COLS.share, { dim: true, bold: style.bold })}
+    </Box>
+  )
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Box key="hero" flexDirection="column" gap="xs">
+        <Box justifyContent="space-between" alignItems="center">
+          {label($, e, 'session spend')}
+          {badge}
+        </Box>
+        <Text size="title" weight="bold" tabular>{usd(s.cost)}</Text>
+        {s.frac !== null && tone !== undefined && bar($, e, [{ series: tone, frac: s.frac }], `${pct(s.frac)} of the session limit`, 8)}
+        <Text size="footnote" dimColor>{under}</Text>
+      </Box>
+      {rule($, e)}
+      <Box key="details" flexDirection="column" gap="xs">
+        {label($, e, 'details')}
+        {heading($, e, 'SESSION', `${int(s.msgs)} msgs`)}
+        {bar($, e, rates.map(x => ({ series: series(x.key), frac: x.share })),
+          `this session by rate: ${rates.map(x => `${x.label} ${pct(x.share)}`).join(', ')}`)}
+        {row('head', <Text> </Text>, 'tokens', 'cost', '%', { dim: true })}
+        {rates.map(x => row(x.key,
+          <Text size="footnote" mono><Text color={SERIES[series(x.key)]![0]}>● </Text>{x.label}</Text>,
+          int(x.tokens), usd(x.cost, 4), pct(x.share)))}
+        {row('total', <Text size="footnote" mono bold>{'  total'}</Text>,
+          int(r.total?.tokens ?? 0), usd(r.total?.cost ?? s.cost, 4), '', { bold: true })}
+        {(r.unmatched ?? 0) > 0 && (
+          <Text size="footnote" dimColor>{int(r.unmatched ?? 0)} output tok have no transcript line. Any thinking is counted in output.</Text>
+        )}
+        {!r.prices_verified && <Text size="footnote" color="warning">Prices unverified: the figures are estimates at the default rates.</Text>}
+      </Box>
+      {rule($, e)}
+      {allSessions}
+    </Box>
+  )
+}
+
+/** Tools, Figma's "TokenTab / Tools": per tool its calls and cost, a bar of what it
+ *  drew (asking, its answer into context, re-reading that) against the costliest tool,
+ *  and the three figures under it. */
+function toolsTab($: EngineInterface, e: RenderEvent, r: Report): RenderChildren {
+  const { Box, Text } = $.ui.resolve(e)
+  const tools = r.tools
+  const calls = tools.reduce((n, t) => n + t.calls, 0)
+  const top = Math.max(...tools.map(t => t.cost), 1e-9)
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Box key="head" flexDirection="column" gap="xs">
+        {heading($, e, 'TOOLS', `${tools.length} tools · ${calls} calls`)}
+        <Text size="footnote" mono dimColor>cost = asking + answer into context + re-reading it (estimates)</Text>
+      </Box>
+      {tools.length === 0 && <Text dimColor>No tool calls in this session yet.</Text>}
+      {tools.slice(0, TOOLS_SHOWN).map(t => (
+        <Box key={`tool-${t.name}`} flexDirection="column">
+          <Box alignItems="center">
+            <Box flexGrow={1} flexShrink={1}><Text size="footnote" mono bold wrap="truncate">{t.name}</Text></Box>
+            <Box flexShrink={0} gap={2}>
+              <Text size="footnote" mono dimColor>{`${t.calls} ${t.calls === 1 ? 'call' : 'calls'}`}</Text>
+              <Text size="footnote" mono tabular bold>{usd(t.cost, 4)}</Text>
+            </Box>
+          </Box>
+          {bar($, e, [{ series: 'ask', frac: t.ask / top }, { series: 'ctx', frac: t.ctx / top }, { series: 'read', frac: t.read / top }],
+            `${t.name}: ask ${usd(t.ask, 4)}, context ${usd(t.ctx, 4)}, re-read ${usd(t.read, 4)}`, 4)}
+          <Text size="caption" mono dimColor wrap="truncate">
+            {`ask ${usd(t.ask, 4)} · ctx ${usd(t.ctx, 4)} (${int(t.ctx_tokens)} tok) · re-read ${usd(t.read, 4)}`}
+          </Text>
+        </Box>
+      ))}
+      {tools.length > TOOLS_SHOWN && <Text size="footnote" mono dimColor>{`+${tools.length - TOOLS_SHOWN} more, in the browser view`}</Text>}
+      {r.overhead > 0 && <Text size="footnote" mono dimColor>{`TokenTab overhead ${usd(r.overhead, 4)}: its hook text in context`}</Text>}
+      {tools.length > 0 && (
+        <Box key="legend" gap={2}>
+          {([['ask', 'ask'], ['ctx', 'ctx'], ['read', 're-read']] as const).map(([k, name]) => (
+            <Text size="caption" mono key={`legend-${k}`} dimColor><Text color={SERIES[k]![0]}>● </Text>{name}</Text>
+          ))}
+        </Box>
+      )}
+    </Box>
+  )
+}
+
+/** Budget, Figma's "TokenTab / Limits": the pane's auto-open switch (the manifest's
+ *  `userConfig` field, as in /config) first, then the budget limits over budget.json, a
+ *  label on the left and its control on the right: a limit as an Input with "save", a
+ *  switch as an on/off Button. Mobile has no Input, so it shows the values and says
+ *  where to edit them. */
+function budgetTab($: EngineInterface, e: RenderEvent): RenderChildren {
   const { Box, Text, Button } = $.ui.resolve(e)
   const o = options
   const row = (key: string, label: string, control: RenderChildren, error?: string) => (
-    <Box key={`row-${key}`} flexDirection="column" paddingLeft={2}>
-      <Box gap={1} alignItems="center">
-        <Box width={LABEL_WIDTH} flexShrink={0}><Text>{label}</Text></Box>
+    <Box key={`row-${key}`} flexDirection="column">
+      <Box gap={1} alignItems="center" justifyContent="space-between">
+        <Text>{label}</Text>
         {control}
       </Box>
       {error !== undefined && <Text color="error">{error}</Text>}
     </Box>
   )
   const section = (title: string, rows: RenderChildren[]) => (
-    <Box key={`section-${title}`} flexDirection="column">
+    <Box key={`section-${title}`} flexDirection="column" gap="xs">
       <Text bold>{title}</Text>
       {rows}
     </Box>
@@ -629,15 +779,15 @@ function optionsTab($: EngineInterface, e: RenderEvent): RenderChildren {
       {section('pane', [
         row('auto-open', 'open at session start',
           <Button key="auto-open" label={autoOpen() ? 'on' : 'off'} onPress={() => { void setAutoOpen($, !autoOpen()) }} />),
-        <Box key="auto-open-note" paddingLeft={2}><Text dimColor>also in /config as {$.plugin.name}.autoOpen</Text></Box>,
+        <Text size="footnote" key="auto-open-note" dimColor>also in /config as {$.plugin.name}.autoOpen</Text>,
       ])}
       {o?.error !== undefined && <Text color="error">{o.error}</Text>}
       {SECTIONS.map(sec => section(sec.title, sec.rows.map(s => row(s.key, s.label, control(s), o?.errors[s.key]))))}
-      <Text dimColor>
+      <Text size="footnote" dimColor>
         {mobile ? 'edit the limits from a desktop or the terminal, or ask: /tokentab:budget daily 30'
           : '"off" switches a limit off; Enter or save writes it, from the next prompt on.'}
       </Text>
-      <Text dimColor>{o?.path ?? 'budget.json'}</Text>
+      <Text size="footnote" dimColor>{o?.path ?? 'budget.json'}</Text>
     </Box>
   )
 }

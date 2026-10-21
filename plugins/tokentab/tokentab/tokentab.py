@@ -596,6 +596,13 @@ def day_total(events):
     return c, t
 
 
+def month_total(events):
+    """USD spent this calendar month, local time, across every session."""
+    now = datetime.now().astimezone()
+    return sum(dc for ts, dc, _ in events
+               if (d := datetime.fromtimestamp(ts)).year == now.year and d.month == now.month)
+
+
 def parse_ts(s):
     if not s:
         return None
@@ -881,6 +888,35 @@ def snapshot(store, sid, prices, led=None):
     }
 
 
+def pane_report(store, sid, prices, budget, led=None):
+    """The pane's three tabs as data (`--report`), from the same report() as the live view
+    and the status line, so the figures agree: spend (the session against its limit, the
+    rate breakdown, today and this month over every session) and tools."""
+    R = report(store, sid, prices, budget, True, led)
+    b, src = R["bucket"], source(store, led, sid)[1]
+    out = {"sid": sid, "session": None, "prices_verified": R["prices_verified"],
+           "today": src.day_total()[0], "month": month_total(src.events), "tools": [], "overhead": 0.0}
+    if not b:
+        return out
+    ulim, tlim = budget.get("session_limit_usd"), budget.get("session_limit_tokens")
+    row = budget_row("session", b.cost, b.wtok, ulim, tlim)
+    out["session"] = {
+        "title": R["session"]["title"], "cost": b.cost, "tokens": b.wtok, "msgs": b.msgs,
+        "limit_usd": float(ulim) if ulim else None, "limit_tokens": int(tlim) if tlim else None,
+        "frac": row["frac"] if row else None,
+        "warn_at": budget.get("warn_at_percent", 70), "hard_stop": bool(budget.get("hard_stop")),
+    }
+    out["rates"] = [{"label": r["label"], "key": r["key"], "tokens": r["tokens"], "cost": r["cost"], "share": r["share"]}
+                    for r in R["rates"]]
+    out["total"] = {"tokens": R["total"]["tokens"], "cost": R["total"]["cost"]}
+    out["unmatched"] = R["unmatched"]
+    out["tools"] = [{"name": nm.split("__")[-1], "calls": e["calls"], "cost": e["cost"],
+                     "ask": e["ask"] + e["think"], "ctx": e["result"], "read": e["read"], "ctx_tokens": e["rtokens"]}
+                    for nm, e in R["tools"]]
+    out["overhead"] = R["overhead"]["cost"]
+    return out
+
+
 def status_line(store, sid, prices, budget, led=None):
     """One plain line for Claude Code's status bar while the pane is not placed (the hooks
     module runs `--status`): this session's cost, today's over every session, and what is
@@ -906,6 +942,8 @@ def main():
     ap.add_argument("--json", action="store_true", help="machine-readable snapshot, implies --once")
     ap.add_argument("--status", action="store_true",
                     help="one plain line (session, today, job budget left) for a status bar, implies --once")
+    ap.add_argument("--report", action="store_true",
+                    help="the pane's tabs as JSON (spend, tools), for the hooks module, implies --once")
     ap.add_argument("--all", action="store_true", help="include cross-project totals")
     ap.add_argument("--interval", type=float, default=2.0, help="refresh seconds (default 2)")
     a = ap.parse_args()
@@ -924,8 +962,10 @@ def main():
     led.scan()
     sid = a.session or store.newest_session()
 
-    if a.json or a.status or a.once:
-        if a.json:
+    if a.json or a.status or a.once or a.report:
+        if a.report:
+            print(json.dumps(pane_report(store, sid, prices, budget, led)))
+        elif a.json:
             print(json.dumps(snapshot(store, sid, prices, led), indent=2))
         elif a.status:
             print(status_line(store, sid, prices, budget, led))

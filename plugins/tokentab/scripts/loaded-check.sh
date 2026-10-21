@@ -10,4 +10,4 @@ DATA="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/data/tokentab-supertab"
 [ -e "$DATA/state/loaded/$SID" ] && exit 0
 [ -e "$DATA/state/gate/$SID" ] && exit 0
 mkdir -p "$DATA/state/gate" && : > "$DATA/state/gate/$SID"
-printf '%s\n' '{"systemMessage": "TokenTab: its hooks module did not load, so nothing is tracked in this session. Claude Code 2.1.287 or later is needed; `claude --version` shows yours. Update, then start a new session."}'
+printf '%s\n' '{"systemMessage": "TokenTab: its hooks module did not load, so nothing is tracked in this session. Claude Code 2.1.304 or later is needed; `claude --version` shows yours. Update, then start a new session."}'

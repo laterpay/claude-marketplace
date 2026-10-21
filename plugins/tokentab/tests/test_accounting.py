@@ -186,9 +186,31 @@ def main():
     if abs(sum(snap.get("cost_by", {}).values()) - snap["cost_usd"]) > 1e-5:
         errs.append("snapshot cost_by does not sum to cost_usd")
     kt.render(store, "fx", prices, {}, True)
+    errs += pane_check(store, prices)
     errs += series_check(b, "transcript", store)
     errs += ledger_case(root, store, prices)
     print("ALL OK" if not errs else f"{len(errs)} FAILURES")
+    return errs
+
+
+def pane_check(store, prices):
+    """`--report`, what the pane draws: JSON, the session against its limit, the rates
+    summing to the total, tools with the three draws; this month counts only this month."""
+    errs = []
+    budget = {"session_limit_usd": 0.0001, "session_limit_tokens": None, "warn_at_percent": 70}
+    rep = json.loads(json.dumps(kt.pane_report(store, "fx", prices, budget)))
+    s = rep["session"]
+    if not s or s["limit_usd"] != 0.0001 or s["limit_tokens"] is not None or not s["frac"] or s["frac"] < 1:
+        errs.append(f"pane report: session against its limit is wrong: {s}")
+    if abs(sum(r["cost"] for r in rep["rates"]) - rep["total"]["cost"]) > 1e-6:
+        errs.append("pane report: rates do not sum to the total")
+    if not rep["tools"] or any(abs(t["ask"] + t["ctx"] + t["read"] - t["cost"]) > 1e-6 for t in rep["tools"]):
+        errs.append("pane report: a tool's ask + ctx + re-read is not its cost")
+    if kt.pane_report(store, "fx", prices, {})["session"]["frac"] is not None:
+        errs.append("pane report: no limit should give no fraction")
+    now = kt.datetime.now().timestamp()
+    if abs(kt.month_total([(now, 1.5, 0), (now - 400 * 86400, 9.0, 0)]) - 1.5) > 1e-9:
+        errs.append("month_total counts a day outside this month")
     return errs
 
 
